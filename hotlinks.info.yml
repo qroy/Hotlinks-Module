@@ -1,0 +1,5 @@
+name: Hotlinks
+type: module
+description: 'Custom link directory with categories, ratings, reports and stats.'
+core_version_requirement: ^10
+package: Custom

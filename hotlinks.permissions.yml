@@ -1,0 +1,12 @@
+access hotlinks admin:
+  title: 'Access Hotlinks admin interface'
+rate links:
+  title: 'Rate links'
+report broken links:
+  title: 'Report broken or inappropriate links'
+view link ratings:
+  title: 'View link ratings'
+view link statistics:
+  title: 'View link in/out statistics'
+moderate reported links:
+  title: 'Moderate reported links'
