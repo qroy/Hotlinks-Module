@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - node.type.link
+    - field.storage.node.field_link_url
+id: node.link.field_link_url
+field_name: field_link_url
+entity_type: node
+bundle: link
+label: 'Link URL'
+description: ''
+required: false
+translatable: true
+default_value: [ ]
+default_value_callback: ''
+settings: {  }
+field_type: link

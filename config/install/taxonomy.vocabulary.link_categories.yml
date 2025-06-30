@@ -1,0 +1,6 @@
+langcode: en
+status: true
+dependencies: {  }
+name: 'Link Categories'
+description: 'Link categories'
+vid: link_categories

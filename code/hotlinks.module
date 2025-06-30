@@ -1,0 +1,127 @@
+<?php
+
+/**
+ * @file
+ * hotlinks.module - Basis functionaliteit voor custom link directory.
+ */
+
+use Drupal\Core\Database\Database;
+use Drupal\Core\Link;
+use Drupal\Core\Url;
+use Drupal\node\Entity\Node;
+use Drupal\taxonomy\Entity\Term;
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\node\Entity\NodeType;
+use Drupal\taxonomy\Entity\Vocabulary;
+
+/**
+ * Implements hook_help().
+ */
+function hotlinks_help($route_name, $route_match) {
+  switch ($route_name) {
+    case 'help.page.hotlinks':
+      return t('HotLinks is a custom module for managing link directories with categories.');
+  }
+}
+
+/**
+ * Implements hook_install().
+ */
+function hotlinks_install() {
+  // Overweeg om alle configuraties te beheren via YAML in config/install/.
+  // Deze hook is dan alleen nodig als fallback of aanvullende logica.
+
+  // Fallback voor content type 'link'.
+  if (!NodeType::load('link')) {
+    $type = NodeType::create([
+      'type' => 'link',
+      'name' => 'Link',
+    ]);
+    $type->save();
+  }
+
+  // Fallback voor vocabulaire 'link_categories'.
+  if (!Vocabulary::load('link_categories')) {
+    $vocab = Vocabulary::create([
+      'vid' => 'link_categories',
+      'description' => 'Link categories',
+      'name' => 'Link Categories',
+    ]);
+    $vocab->save();
+  }
+
+  // Fallback voor field_link_url.
+  if (!FieldStorageConfig::loadByName('node', 'field_link_url')) {
+    FieldStorageConfig::create([
+      'field_name' => 'field_link_url',
+      'entity_type' => 'node',
+      'type' => 'link',
+    ])->save();
+  }
+  if (!FieldConfig::loadByName('node', 'link', 'field_link_url')) {
+    FieldConfig::create([
+      'field_name' => 'field_link_url',
+      'entity_type' => 'node',
+      'bundle' => 'link',
+      'label' => 'Link URL',
+    ])->save();
+  }
+
+  // Fallback voor field_link_category.
+  if (!FieldStorageConfig::loadByName('node', 'field_link_category')) {
+    FieldStorageConfig::create([
+      'field_name' => 'field_link_category',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => [
+        'target_type' => 'taxonomy_term',
+      ],
+    ])->save();
+  }
+  if (!FieldConfig::loadByName('node', 'link', 'field_link_category')) {
+    FieldConfig::create([
+      'field_name' => 'field_link_category',
+      'entity_type' => 'node',
+      'bundle' => 'link',
+      'label' => 'Link Category',
+      'settings' => [
+        'handler' => 'default',
+        'handler_settings' => [
+          'target_bundles' => [
+            'link_categories' => 'link_categories',
+          ],
+        ],
+      ],
+    ])->save();
+  }
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function hotlinks_uninstall() {
+  // Verwijder velden.
+  if (\$field = FieldConfig::loadByName('node', 'link', 'field_link_url')) {
+    \$field->delete();
+  }
+  if (\$field = FieldConfig::loadByName('node', 'link', 'field_link_category')) {
+    \$field->delete();
+  }
+  if (\$storage = FieldStorageConfig::loadByName('node', 'field_link_url')) {
+    \$storage->delete();
+  }
+  if (\$storage = FieldStorageConfig::loadByName('node', 'field_link_category')) {
+    \$storage->delete();
+  }
+
+  // Verwijder contenttype.
+  if (\$type = NodeType::load('link')) {
+    \$type->delete();
+  }
+
+  // Verwijder vocabulaire.
+  if (\$vocab = Vocabulary::load('link_categories')) {
+    \$vocab->delete();
+  }
+}
