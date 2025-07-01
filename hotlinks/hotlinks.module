@@ -1,0 +1,24 @@
+<?php
+use Symfony\Component\HttpFoundation\RedirectResponse;
+use Drupal\core_mail\MailManagerInterface;
+
+/** Implements hook_cron(). */
+function hotlinks_cron() {
+  $nids = \Drupal::entityQuery('node')->condition('type','link')->execute();
+  $client = \Drupal::httpClient();
+  $dead = [];
+  foreach ($nids as $nid) {
+    $node = \Drupal::entityTypeManager()->getStorage('node')->load($nid);
+    $url = $node->get('field_hotlink_url')->uri;
+    try {
+      $response = $client->head($url);
+      if ($response->getStatusCode() >= 400) { $dead[] = $nid; }
+    }
+    catch (\Exception $e) { $dead[] = $nid; }
+  }
+  if ($dead) {
+    $mail = \Drupal::service('plugin.manager.mail');
+    $params['dead'] = $dead;
+    $mail->mail('hotlinks','dead_report','admin@example.com',$GLOBALS['language_default']->getId(),$params);
+  }
+}

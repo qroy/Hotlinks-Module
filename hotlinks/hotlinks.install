@@ -1,0 +1,194 @@
+<?php
+use Drupal\taxonomy\Entity\Vocabulary;
+use Drupal\taxonomy\Entity\Term;
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\node\Entity\NodeType;
+use Drupal\Core\Database\SchemaObjectExistsException;
+
+/**
+ * Implements hook_install().
+ */
+function hotlinks_install() {
+  // Clean up any existing Link type or fields on reinstall.
+  if ($type = NodeType::load('link')) {
+    $type->delete();
+  }
+  $fields_to_remove = [
+    'field_hotlink_category',
+    'field_hotlink_url',
+    'field_hotlink_description',
+    'field_hotlink_click_count',
+    'field_hotlink_incoming_count',
+    'field_hotlink_rating_total',
+    'field_hotlink_rating_count',
+  ];
+  foreach ($fields_to_remove as $fname) {
+    if ($field = FieldConfig::loadByName('node', 'link', $fname)) {
+      $field->delete();
+    }
+    if ($storage = FieldStorageConfig::loadByName('node', $fname)) {
+      $storage->delete();
+    }
+  }
+  if ($vocab = Vocabulary::load('hotlink_categories')) {
+    $vocab->delete();
+  }
+
+  // 1) Create the 'link' content type.
+  $type = NodeType::create([
+    'type' => 'link',
+    'name' => 'Link',
+    'description' => 'Link with click tracking, ratings, reporting.',
+  ]);
+  $type->save();
+
+  // 2) Create the taxonomy vocabulary.
+  $vocab = Vocabulary::create([
+    'vid' => 'hotlink_categories',
+    'name' => 'Hotlink Categories',
+    'hierarchy' => Vocabulary::HIERARCHY_SINGLE,
+  ]);
+  $vocab->save();
+
+  // 3) Parent terms.
+  $parent_names = [
+    'Star Trek Communities',
+    'Star Trek Fandom',
+    'Star Trek Games',
+    'Star Trek International',
+    'Star Trek News',
+    'Star Trek Official',
+    'Star Trek Reference',
+    'Star Trek Role Playing',
+    'Star Trek Services',
+    'Star Trek Shopping',
+    'Star Trek Universe',
+  ];
+  $term_ids = [];
+  foreach ($parent_names as $name) {
+    $term = Term::create([
+      'vid' => 'hotlink_categories',
+      'name' => $name,
+    ]);
+    $term->save();
+    $term_ids[$name] = $term->id();
+  }
+
+  // 4) Subcategories.
+  $subcategories = [
+    'Star Trek Communities'   => ['Chat rooms', 'Fanclubs', 'Forums', 'Mailing Lists', 'Blogs'],
+    'Star Trek Fandom'        => ['Conventions', 'Fan Fiction', 'Humor', 'Podcasts', 'Articles'],
+    'Star Trek Games'         => ['XBox Games', 'PC Games', 'PlayStation Games', 'Mobile Games'],
+    'Star Trek International' => ['German', 'Italian', 'Dutch', 'French', 'Spanish'],
+    'Star Trek News'          => ['E-Zines', 'RSS Feeds', 'Newsletters'],
+    'Star Trek Official'      => ['Paramount', 'CBS', 'Merchandise'],
+    'Star Trek Reference'     => ['Aliens', 'Characters and Actors', 'Episodes', 'Starships'],
+    'Star Trek Role Playing'  => ['E-Mail', 'Chat', 'Forum', 'Tabletop'],
+    'Star Trek Services'      => ['Banner Exchanges', 'E-mail Services', 'Webrings', 'Hosting'],
+    'Star Trek Shopping'      => ['Apparel', 'Books', 'Collectibles', 'Toys'],
+    'Star Trek Universe'      => ['TOS (Original Series)', 'TNG (The Next Generation)', 'DS9 (Deep Space Nine)', 'VOY (Voyager)', 'ENT (Enterprise)', 'Discovery', 'Picard'],
+  ];
+  foreach ($subcategories as $parent => $children) {
+    foreach ($children as $child_name) {
+      $child = Term::create([
+        'vid' => 'hotlink_categories',
+        'name' => $child_name,
+        'parent' => [$term_ids[$parent]],
+      ]);
+      $child->save();
+    }
+  }
+
+  // 5) Add fields to the 'link' type.
+  $fields = [
+    'field_hotlink_category'    => ['type' => 'entity_reference', 'settings' => ['target_type' => 'taxonomy_term'], 'label' => 'Category'],
+    'field_hotlink_url'         => ['type' => 'link',             'settings' => [],                            'label' => 'URL'],
+    'field_hotlink_description' => ['type' => 'text_long',        'settings' => [],                            'label' => 'Description'],
+    'field_hotlink_click_count' => ['type' => 'integer',          'settings' => [],                            'label' => 'Outgoing click count'],
+    'field_hotlink_incoming_count' => ['type' => 'integer',       'settings' => [],                            'label' => 'Incoming click count'],
+    'field_hotlink_rating_total'   => ['type' => 'integer',       'settings' => [],                            'label' => 'Rating total'],
+    'field_hotlink_rating_count'   => ['type' => 'integer',       'settings' => [],                            'label' => 'Rating count'],
+  ];
+  foreach ($fields as $fname => $info) {
+    FieldStorageConfig::create([
+      'field_name'  => $fname,
+      'entity_type' => 'node',
+      'type'        => $info['type'],
+      'settings'    => $info['settings'],
+    ])->save();
+    FieldConfig::create([
+      'field_name'  => $fname,
+      'entity_type' => 'node',
+      'bundle'      => 'link',
+      'label'       => $info['label'],
+      'settings'    => $info['settings'],
+    ])->save();
+  }
+
+  // 6) Create report table via hook_schema().
+  $handler = \Drupal::service('module_handler');
+  $schemas = $handler->invokeAll('schema');
+  if (!empty($schemas['hotlinks_reports'])) {
+    try {
+      \Drupal::database()->schema()->createTable('hotlinks_reports', $schemas['hotlinks_reports']);
+    }
+    catch (SchemaObjectExistsException $e) {
+      // Table exists; skip.
+    }
+  }
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function hotlinks_uninstall() {
+  // Remove all fields on 'link'.
+  $to_remove = [
+    'field_hotlink_category',
+    'field_hotlink_url',
+    'field_hotlink_description',
+    'field_hotlink_click_count',
+    'field_hotlink_incoming_count',
+    'field_hotlink_rating_total',
+    'field_hotlink_rating_count',
+  ];
+  foreach ($to_remove as $field_name) {
+    if ($f = FieldConfig::loadByName('node', 'link', $field_name)) {
+      $f->delete();
+    }
+    if ($s = FieldStorageConfig::loadByName('node', $field_name)) {
+      $s->delete();
+    }
+  }
+
+  // Remove content type and vocabulary.
+  if ($type = NodeType::load('link')) {
+    $type->delete();
+  }
+  if ($vocab = Vocabulary::load('hotlink_categories')) {
+    $vocab->delete();
+  }
+
+  // Drop the reports table.
+  \Drupal::database()->schema()->dropTable('hotlinks_reports');
+}
+
+/**
+ * Implements hook_schema().
+ */
+function hotlinks_schema() {
+  return [
+    'hotlinks_reports' => [
+      'description' => 'User reports of broken or unwanted links.',
+      'fields'      => [
+        'rid'     => ['type' => 'serial', 'not null' => TRUE],
+        'nid'     => ['type' => 'int',    'not null' => TRUE],
+        'uid'     => ['type' => 'int',    'not null' => FALSE],
+        'message' => ['type' => 'text',   'not null' => TRUE],
+        'created' => ['type' => 'int',    'not null' => TRUE],
+      ],
+      'primary key' => ['rid'],
+    ],
+  ];
+}

@@ -1,0 +1,11 @@
+name: Hotlinks
+type: module
+description: Provides a block to display categorized lists of external links, click tracking, ratings, reporting, and automated dead-link checks.
+package: Custom
+core_version_requirement: ^11
+dependencies:
+  - node
+  - taxonomy
+  - field
+  - link
+  - field_ui
