@@ -1,0 +1,11 @@
+hotlinks.styles:
+  css:
+    theme:
+      css/hotlinks.css: {}
+
+hotlinks.admin:
+  css:
+    theme:
+      css/hotlinks-admin.css: {}
+  dependencies:
+    - core/drupal

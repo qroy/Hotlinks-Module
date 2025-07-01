@@ -1,0 +1,6 @@
+hotlinks.admin_settings:
+  title: 'Hotlinks'
+  parent: system.admin_config_content
+  description: 'Configure hotlinks module settings'
+  route_name: hotlinks.admin_settings
+  weight: 10

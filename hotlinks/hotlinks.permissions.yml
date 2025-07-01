@@ -1,0 +1,27 @@
+administer hotlinks:
+  title: 'Administer hotlinks'
+  description: 'Configure hotlinks module settings and manage categories'
+
+access hotlinks:
+  title: 'Access hotlinks index'
+  description: 'View the hotlinks index and browse categories'
+
+create hotlink content:
+  title: 'Create hotlink content'
+  description: 'Create new hotlinks'
+
+edit own hotlink content:
+  title: 'Edit own hotlink content'
+  description: 'Edit your own hotlinks'
+
+edit any hotlink content:
+  title: 'Edit any hotlink content'
+  description: 'Edit any hotlinks'
+
+delete own hotlink content:
+  title: 'Delete own hotlink content'
+  description: 'Delete your own hotlinks'
+
+delete any hotlink content:
+  title: 'Delete any hotlink content'
+  description: 'Delete any hotlinks'

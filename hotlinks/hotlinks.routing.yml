@@ -1,0 +1,27 @@
+hotlinks.admin_settings:
+  path: '/admin/config/content/hotlinks'
+  defaults:
+    _form: '\Drupal\hotlinks\Form\HotlinksSettingsForm'
+    _title: 'Hotlinks Settings'
+  requirements:
+    _permission: 'administer hotlinks'
+
+hotlinks.index:
+  path: '/hotlinks'
+  defaults:
+    _controller: '\Drupal\hotlinks\Controller\HotlinksController::index'
+    _title: 'Hotlinks Index'
+  requirements:
+    _permission: 'access hotlinks'
+
+hotlinks.category:
+  path: '/hotlinks/category/{category}'
+  defaults:
+    _controller: '\Drupal\hotlinks\Controller\HotlinksController::category'
+    _title_callback: '\Drupal\hotlinks\Controller\HotlinksController::categoryTitle'
+  requirements:
+    _permission: 'access hotlinks'
+  options:
+    parameters:
+      category:
+        type: entity:taxonomy_term

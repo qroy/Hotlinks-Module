@@ -1,0 +1,31 @@
+<?php
+
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Form\FormStateInterface;
+
+function hotlinks_form_node_hotlink_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  if (isset($form['field_hotlink_category'])) {
+    $form['field_hotlink_category']['widget']['#description'] = t('Select one or more categories.');
+  }
+}
+
+function hotlinks_form_node_hotlink_edit_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  hotlinks_form_node_hotlink_form_alter($form, $form_state, $form_id);
+}
+
+function hotlinks_entity_presave(EntityInterface $entity) {
+  if ($entity->getEntityTypeId() == 'node' && $entity->bundle() == 'hotlink') {
+    if (empty($entity->getTitle()) && !$entity->get('field_hotlink_url')->isEmpty()) {
+      $url_field = $entity->get('field_hotlink_url')->first();
+      if ($url_field && $url_field->title) {
+        $entity->setTitle($url_field->title);
+      } elseif ($url_field && $url_field->uri) {
+        $parsed_url = parse_url($url_field->uri);
+        if (isset($parsed_url['host'])) {
+          $domain = preg_replace('/^www\./', '', $parsed_url['host']);
+          $entity->setTitle(ucfirst($domain));
+        }
+      }
+    }
+  }
+}

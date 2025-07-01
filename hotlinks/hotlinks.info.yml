@@ -1,0 +1,12 @@
+name: Hotlinks
+type: module
+description: 'Maintains a categorized link index for organizing and displaying useful links.'
+package: Custom
+core_version_requirement: ^10 || ^11
+dependencies:
+  - drupal:node
+  - drupal:field
+  - drupal:taxonomy
+  - drupal:link
+  - drupal:text
+configure: hotlinks.admin_settings

@@ -1,0 +1,135 @@
+<?php
+
+use Drupal\taxonomy\Entity\Vocabulary;
+use Drupal\taxonomy\Entity\Term;
+use Drupal\node\Entity\NodeType;
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\field\Entity\FieldConfig;
+
+function hotlinks_install() {
+  // Create vocabulary
+  $vocabulary = Vocabulary::create([
+    'vid' => 'hotlink_categories',
+    'name' => 'Hotlink Categories',
+    'description' => 'Categories for organizing hotlinks',
+    'hierarchy' => 1,
+  ]);
+  $vocabulary->save();
+
+  // Create categories
+  $categories = [
+    'Technology' => ['Software Development', 'Hardware', 'Web Development'],
+    'News & Media' => ['Newspapers', 'Magazines', 'Blogs'],
+    'Education' => ['Online Courses', 'Universities', 'Tutorials'],
+    'Business' => ['Finance', 'Marketing', 'E-commerce'],
+    'Reference' => ['Dictionaries', 'Tools', 'Documentation'],
+  ];
+
+  foreach ($categories as $parent_name => $subcategories) {
+    $parent_term = Term::create([
+      'vid' => 'hotlink_categories',
+      'name' => $parent_name,
+    ]);
+    $parent_term->save();
+
+    foreach ($subcategories as $subcategory_name) {
+      $child_term = Term::create([
+        'vid' => 'hotlink_categories',
+        'name' => $subcategory_name,
+        'parent' => $parent_term->id(),
+      ]);
+      $child_term->save();
+    }
+  }
+
+  // Create content type
+  $node_type = NodeType::create([
+    'type' => 'hotlink',
+    'name' => 'Hotlink',
+    'description' => 'A categorized link with description',
+  ]);
+  $node_type->save();
+
+  // Create URL field
+  $field_storage = FieldStorageConfig::create([
+    'field_name' => 'field_hotlink_url',
+    'entity_type' => 'node',
+    'type' => 'link',
+    'cardinality' => 1,
+  ]);
+  $field_storage->save();
+
+  FieldConfig::create([
+    'field_storage' => $field_storage,
+    'bundle' => 'hotlink',
+    'label' => 'URL',
+    'required' => TRUE,
+  ])->save();
+
+  // Create category field
+  $field_storage = FieldStorageConfig::create([
+    'field_name' => 'field_hotlink_category',
+    'entity_type' => 'node',
+    'type' => 'entity_reference',
+    'cardinality' => -1,
+    'settings' => ['target_type' => 'taxonomy_term'],
+  ]);
+  $field_storage->save();
+
+  FieldConfig::create([
+    'field_storage' => $field_storage,
+    'bundle' => 'hotlink',
+    'label' => 'Categories',
+    'required' => TRUE,
+    'settings' => [
+      'handler_settings' => [
+        'target_bundles' => ['hotlink_categories' => 'hotlink_categories'],
+      ],
+    ],
+  ])->save();
+
+  // Create description field
+  $field_storage = FieldStorageConfig::create([
+    'field_name' => 'field_hotlink_description',
+    'entity_type' => 'node',
+    'type' => 'text_long',
+    'cardinality' => 1,
+  ]);
+  $field_storage->save();
+
+  FieldConfig::create([
+    'field_storage' => $field_storage,
+    'bundle' => 'hotlink',
+    'label' => 'Description',
+    'required' => FALSE,
+  ])->save();
+
+  \Drupal::messenger()->addMessage(t('Hotlinks module installed successfully!'));
+}
+
+function hotlinks_uninstall() {
+  // Delete nodes
+  $nids = \Drupal::entityQuery('node')
+    ->condition('type', 'hotlink')
+    ->accessCheck(FALSE)
+    ->execute();
+  
+  if (!empty($nids)) {
+    $nodes = \Drupal::entityTypeManager()->getStorage('node')->loadMultiple($nids);
+    foreach ($nodes as $node) {
+      $node->delete();
+    }
+  }
+
+  // Delete content type
+  $node_type = \Drupal::entityTypeManager()->getStorage('node_type')->load('hotlink');
+  if ($node_type) {
+    $node_type->delete();
+  }
+
+  // Delete vocabulary
+  $vocabulary = \Drupal::entityTypeManager()->getStorage('taxonomy_vocabulary')->load('hotlink_categories');
+  if ($vocabulary) {
+    $vocabulary->delete();
+  }
+}
