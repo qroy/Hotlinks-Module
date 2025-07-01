@@ -1,0 +1,5 @@
+langcode: en
+status: true
+type: link
+name: 'Link'
+description: 'A link node type.'

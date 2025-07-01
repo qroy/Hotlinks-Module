@@ -1,0 +1,15 @@
+hotlinks.overview:
+  path: '/hotlinks'
+  defaults:
+    _controller: '\Drupal\hotlinks\Controller\HotlinksController::overview'
+    _title: 'Link Directory'
+  requirements:
+    _permission: 'access content'
+
+hotlinks.submit_link:
+  path: '/hotlinks/submit'
+  defaults:
+    _form: '\Drupal\hotlinks\Form\HotlinksSubmitForm'
+    _title: 'Submit a Link'
+  requirements:
+    _permission: 'submit hotlinks'

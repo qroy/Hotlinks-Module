@@ -1,0 +1,10 @@
+name: Hotlinks
+type: module
+description: 'Custom link directory system.'
+core_version_requirement: ^11
+package: Custom
+dependencies:
+  - link
+  - node
+  - taxonomy
+  - field

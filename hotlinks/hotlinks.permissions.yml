@@ -1,0 +1,11 @@
+submit hotlinks:
+  title: 'Submit links'
+  description: 'Allow users to submit links to the directory.'
+
+moderate hotlinks:
+  title: 'Moderate submitted links'
+  description: 'Approve or reject submitted links.'
+
+report broken hotlinks:
+  title: 'Report broken links'
+  description: 'Allow users to report broken or inappropriate links.'

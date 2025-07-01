@@ -1,0 +1,105 @@
+<?php
+
+/**
+ * @file
+ * hotlinks.module - Custom directory logic.
+ */
+
+use Drupal\Core\Database\Database;
+use Drupal\Core\Url;
+use Drupal\node\Entity\Node;
+use Drupal\taxonomy\Entity\Vocabulary;
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\node\Entity\NodeType;
+
+/**
+ * Implements hook_help().
+ */
+function hotlinks_help($route_name, $route_match) {
+  if ($route_name === 'help.page.hotlinks') {
+    return t('Hotlinks provides a link directory with categories, ratings, reporting, and submissions.');
+  }
+}
+
+/**
+ * Implements hook_install().
+ */
+function hotlinks_install() {
+  // Create 'link' content type if not exists.
+  if (!NodeType::load('link')) {
+    NodeType::create([
+      'type' => 'link',
+      'name' => 'Link',
+    ])->save();
+  }
+
+  // Create 'link_categories' vocabulary.
+  if (!Vocabulary::load('link_categories')) {
+    Vocabulary::create([
+      'vid' => 'link_categories',
+      'name' => 'Link Categories',
+      'description' => 'Categories for organizing links.',
+    ])->save();
+  }
+
+  // Create fields.
+  if (!FieldStorageConfig::loadByName('node', 'field_link_url')) {
+    FieldStorageConfig::create([
+      'field_name' => 'field_link_url',
+      'entity_type' => 'node',
+      'type' => 'link',
+    ])->save();
+    FieldConfig::create([
+      'field_name' => 'field_link_url',
+      'entity_type' => 'node',
+      'bundle' => 'link',
+      'label' => 'Link URL',
+    ])->save();
+  }
+
+  if (!FieldStorageConfig::loadByName('node', 'field_link_category')) {
+    FieldStorageConfig::create([
+      'field_name' => 'field_link_category',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'taxonomy_term'],
+    ])->save();
+    FieldConfig::create([
+      'field_name' => 'field_link_category',
+      'entity_type' => 'node',
+      'bundle' => 'link',
+      'label' => 'Link Category',
+      'settings' => [
+        'handler' => 'default',
+        'handler_settings' => [
+          'target_bundles' => ['link_categories' => 'link_categories'],
+        ],
+      ],
+    ])->save();
+  }
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function hotlinks_uninstall() {
+  if ($type = NodeType::load('link')) {
+    $type->delete();
+  }
+  if ($vocab = Vocabulary::load('link_categories')) {
+    $vocab->delete();
+  }
+  if ($f = FieldConfig::loadByName('node', 'link', 'field_link_url')) {
+    $f->delete();
+  }
+  if ($f = FieldConfig::loadByName('node', 'link', 'field_link_category')) {
+    $f->delete();
+  }
+  if ($fs = FieldStorageConfig::loadByName('node', 'field_link_url')) {
+    $fs->delete();
+  }
+  if ($fs = FieldStorageConfig::loadByName('node', 'field_link_category')) {
+    $fs->delete();
+  }
+}

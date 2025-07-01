@@ -1,7 +1,0 @@
-hotlinks.settings:
-  path: '/admin/config/services/hotlinks'
-  defaults:
-    _form: '\Drupal\hotlinks\Form\HotlinksSettingsForm'
-    _title: 'Hotlinks Settings'
-  requirements:
-    _permission: 'administer site configuration'
