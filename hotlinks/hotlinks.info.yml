@@ -9,4 +9,6 @@ dependencies:
   - drupal:taxonomy
   - drupal:link
   - drupal:text
+  - drupal:image
+  - drupal:file
 configure: hotlinks.admin_settings

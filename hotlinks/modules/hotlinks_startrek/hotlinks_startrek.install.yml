@@ -11,14 +11,34 @@ use Drupal\taxonomy\Entity\Term;
  * Implements hook_install().
  */
 function hotlinks_startrek_install() {
-  // Check if hotlink_categories vocabulary exists
+  // Ensure the main hotlinks module is fully installed first
+  if (!\Drupal::moduleHandler()->moduleExists('hotlinks')) {
+    \Drupal::messenger()->addError(t('Hotlinks module must be installed and enabled before installing Star Trek categories.'));
+    return;
+  }
+
+  // Check if hotlink_categories vocabulary exists and wait if needed
   $vocabulary = \Drupal::entityTypeManager()
     ->getStorage('taxonomy_vocabulary')
     ->load('hotlink_categories');
 
   if (!$vocabulary) {
-    \Drupal::messenger()->addError(t('Hotlinks module must be installed and enabled before installing Star Trek categories.'));
-    return;
+    // If vocabulary doesn't exist, try to trigger the main module's install
+    \Drupal::logger('hotlinks_startrek')->notice('Vocabulary not found, attempting to refresh...');
+    
+    // Clear entity type caches
+    \Drupal::entityTypeManager()->clearCachedDefinitions();
+    \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+    
+    // Try again
+    $vocabulary = \Drupal::entityTypeManager()
+      ->getStorage('taxonomy_vocabulary')
+      ->load('hotlink_categories');
+    
+    if (!$vocabulary) {
+      \Drupal::messenger()->addError(t('Hotlinks vocabulary not found. Please ensure the main Hotlinks module is properly installed, then try enabling this module again.'));
+      return;
+    }
   }
 
   // Don't clear existing basic categories on install - just add Star Trek ones
@@ -125,14 +145,17 @@ function hotlinks_startrek_install() {
     'Star Trek Universe' => [
       'description' => 'Content organized by specific Star Trek series, movies, and eras.',
       'subcategories' => [
-        'TOS (The Original Series)',
-        'TNG (The Next Generation)',
-        'DS9 (Deep Space Nine)',
-        'VOY (Voyager)',
-        'ENT (Enterprise)',
-        'DIS (Discovery)',
-        'PIC (Picard)',
-        'SNW (Strange New Worlds)',
+        'TOS',
+        'TAS',
+        'TNG',
+        'DS9',
+        'VOY',
+        'ENT',
+        'DIS',
+        'PIC',
+        'SNW',
+        'LD',
+        'PRO',
         'Movies',
       ],
     ],
@@ -168,9 +191,30 @@ function hotlinks_startrek_install() {
           ]);
 
         if (empty($existing_child)) {
+          // Set description for Star Trek Universe subcategories
+          $subcategory_description = '';
+          if ($parent_name === 'Star Trek Universe') {
+            $series_descriptions = [
+              'TOS' => 'The Original Series (1966-1969) - The classic series with Kirk, Spock, and McCoy.',
+              'TAS' => 'The Animated Series (1973-1974) - Animated continuation of TOS with the original cast.',
+              'TNG' => 'The Next Generation (1987-1994) - Set 100 years after TOS with Captain Picard and the Enterprise-D.',
+              'DS9' => 'Deep Space Nine (1993-1999) - Space station-based series focusing on politics, war, and religion.',
+              'VOY' => 'Voyager (1995-2001) - Lost in the Delta Quadrant with Captain Janeway and her crew.',
+              'ENT' => 'Enterprise (2001-2005) - Prequel series set before TOS with Captain Archer.',
+              'DIS' => 'Discovery (2017-present) - Modern series set before TOS focusing on the spore drive and Mirror Universe.',
+              'PIC' => 'Picard (2020-2023) - Sequel series following Jean-Luc Picard in his later years.',
+              'SNW' => 'Strange New Worlds (2022-present) - Captain Pike and the Enterprise crew before Kirk.',
+              'LD' => 'Lower Decks (2020-present) - Animated comedy series following lower-ranking Starfleet officers.',
+              'PRO' => 'Prodigy (2021-present) - Animated series aimed at younger audiences featuring a diverse crew.',
+              'Movies' => 'Star Trek films from The Motion Picture (1979) to the recent reboot series.',
+            ];
+            $subcategory_description = $series_descriptions[$subcategory_name] ?? '';
+          }
+
           $child_term = Term::create([
             'vid' => 'hotlink_categories',
             'name' => $subcategory_name,
+            'description' => $subcategory_description,
             'parent' => $parent_term->id(),
           ]);
           $child_term->save();
@@ -237,4 +281,26 @@ function hotlinks_startrek_uninstall() {
   // This keeps the module simple and doesn't assume what users want
 
   \Drupal::messenger()->addMessage(t('Removed @count Star Trek categories.', ['@count' => $deleted_count]));
+}
+
+/**
+ * Re-run install if categories weren't created during initial install.
+ */
+function hotlinks_startrek_update_8001() {
+  // Check if any Star Trek categories exist
+  $existing_terms = \Drupal::entityTypeManager()
+    ->getStorage('taxonomy_term')
+    ->loadByProperties([
+      'vid' => 'hotlink_categories',
+      'name' => 'Star Trek Communities',
+    ]);
+
+  if (empty($existing_terms)) {
+    // No Star Trek categories found, run the install process
+    \Drupal::logger('hotlinks_startrek')->notice('Re-running Star Trek categories installation...');
+    hotlinks_startrek_install();
+    return t('Re-installed Star Trek categories that were missing from initial installation.');
+  }
+
+  return t('Star Trek categories already exist, no action needed.');
 }

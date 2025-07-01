@@ -625,3 +625,12 @@ function hotlinks_update_8005() {
 
   return t('Ensured hotlinks_index view mode is enabled.');
 }
+
+/**
+ * Set module weight to ensure proper installation order.
+ */
+function hotlinks_update_8006() {
+  // Set module weight to ensure this module installs before submodules
+  module_set_weight('hotlinks', -10);
+  return t('Set module weight to ensure proper installation order.');
+}

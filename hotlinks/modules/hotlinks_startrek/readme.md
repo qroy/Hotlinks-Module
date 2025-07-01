@@ -18,6 +18,20 @@ Or via Drush:
 drush en hotlinks_startrek
 ```
 
+### If Enabling Both Modules at Once
+If you enable both the main Hotlinks module and Star Trek Categories at the same time, the categories might not get created. If this happens:
+
+```bash
+# Run the update hook to create missing categories
+drush updb
+```
+
+Or disable and re-enable the Star Trek module:
+```bash
+drush pmu hotlinks_startrek -y
+drush en hotlinks_startrek -y
+```
+
 ## What it does
 
 - **Removes** the basic example categories (Technology, Reference, etc.)
