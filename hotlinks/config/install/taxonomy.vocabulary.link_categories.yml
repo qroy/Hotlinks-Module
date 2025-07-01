@@ -1,7 +1,0 @@
-langcode: en
-status: true
-dependencies: {  }
-id: link_categories
-label: 'Link Categories'
-description: 'Categories used for grouping links.'
-vid: link_categories
