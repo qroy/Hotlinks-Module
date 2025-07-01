@@ -1,433 +1,126 @@
 <?php
 
-namespace Drupal\hotlinks\Controller;
+/**
+ * @file
+ * Contains hotlinks.module.
+ */
 
-use Drupal\Core\Controller\ControllerBase;
-use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\taxonomy\Entity\Term;
-use Symfony\Component\DependencyInjection\ContainerInterface;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Routing\RouteMatchInterface;
 
-class HotlinksController extends ControllerBase {
-
-  protected $entityTypeManager;
-
-  public function __construct(EntityTypeManagerInterface $entity_type_manager) {
-    $this->entityTypeManager = $entity_type_manager;
+/**
+ * Implements hook_help().
+ */
+function hotlinks_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.hotlinks':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('The Hotlinks module provides a way to maintain a categorized index of useful links. It supports hierarchical categories and subcategories for better organization.') . '</p>';
+      $output .= '<h3>' . t('Uses') . '</h3>';
+      $output .= '<dl>';
+      $output .= '<dt>' . t('Creating hotlinks') . '</dt>';
+      $output .= '<dd>' . t('Create new hotlinks by going to Content > Add content > Hotlink. Each hotlink requires a URL and at least one category.') . '</dd>';
+      $output .= '<dt>' . t('Managing categories') . '</dt>';
+      $output .= '<dd>' . t('Manage hotlink categories at Structure > Taxonomy > Hotlink Categories. You can create nested subcategories for better organization.') . '</dd>';
+      $output .= '<dt>' . t('Viewing hotlinks') . '</dt>';
+      $output .= '<dd>' . t('View all hotlinks organized by category at /hotlinks, or view specific categories at /hotlinks/category/[category-id].') . '</dd>';
+      $output .= '<dt>' . t('Configuration') . '</dt>';
+      $output .= '<dd>' . t('Configure display options at Configuration > Content authoring > Hotlinks.') . '</dd>';
+      $output .= '</dl>';
+      return $output;
   }
+}
 
-  public static function create(ContainerInterface $container) {
-    return new static($container->get('entity_type.manager'));
+/**
+ * Implements hook_form_FORM_ID_alter() for node_hotlink_form.
+ */
+function hotlinks_form_node_hotlink_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // Improve the category field with better hierarchy display.
+  if (isset($form['field_hotlink_category'])) {
+    $form['field_hotlink_category']['widget']['#description'] = t('Select one or more categories. You can type to search categories.');
   }
+}
 
-  public function index() {
-    $build = [];
+/**
+ * Implements hook_form_FORM_ID_alter() for node_hotlink_edit_form.
+ */
+function hotlinks_form_node_hotlink_edit_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  hotlinks_form_node_hotlink_form_alter($form, $form_state, $form_id);
+}
 
-    try {
-      // Get all hotlinks
-      $query = $this->entityTypeManager
-        ->getStorage('node')
-        ->getQuery()
-        ->condition('type', 'hotlink')
-        ->condition('status', 1)
-        ->accessCheck(TRUE);
-
-      $nids = $query->execute();
-      $hotlinks = !empty($nids) ? $this->entityTypeManager->getStorage('node')->loadMultiple($nids) : [];
-
-      // Group hotlinks by category
-      $hotlinks_by_category = $this->groupHotlinksByCategory($hotlinks);
-
-      // Get all categories
-      $categories = $this->entityTypeManager
-        ->getStorage('taxonomy_term')
-        ->loadByProperties(['vid' => 'hotlink_categories']);
-
-      if (empty($categories)) {
-        $build['no_categories'] = [
-          '#markup' => '<p>' . $this->t('No categories found.') . '</p>',
-        ];
-        return $build;
-      }
-
-      // Build Star Trek Wormhole style front page
-      $build['link_index'] = [
-        '#type' => 'container',
-        '#attributes' => ['class' => ['hotlinks-index']],
-        'title' => [
-          '#markup' => '<h2>Link Index</h2>',
-        ],
-        'categories' => $this->buildFrontPageCategories($categories, $hotlinks_by_category),
-      ];
-
-      $build['#attached']['library'][] = 'hotlinks/hotlinks.styles';
-
-    } catch (\Exception $e) {
-      $build['error'] = [
-        '#markup' => '<p><strong>Error:</strong> ' . $e->getMessage() . '</p>',
-      ];
-      \Drupal::logger('hotlinks')->error('Error in index: @message', ['@message' => $e->getMessage()]);
-    }
-
-    return $build;
-  }
-
-  public function category(Term $category) {
-    $build = [];
-
-    try {
-      // Get all hotlinks
-      $query = $this->entityTypeManager
-        ->getStorage('node')
-        ->getQuery()
-        ->condition('type', 'hotlink')
-        ->condition('status', 1)
-        ->accessCheck(TRUE)
-        ->sort('title', 'ASC');
-
-      $nids = $query->execute();
-      $hotlinks = !empty($nids) ? $this->entityTypeManager->getStorage('node')->loadMultiple($nids) : [];
-
-      // Group hotlinks by category
-      $hotlinks_by_category = $this->groupHotlinksByCategory($hotlinks);
-
-      // Get category links
-      $category_hotlinks = $this->filterHotlinksByCategory($hotlinks, $category->id());
-
-      // Check if this is a parent category
-      $children = $this->entityTypeManager
-        ->getStorage('taxonomy_term')
-        ->loadChildren($category->id());
-
-      // Build category page in Star Trek Wormhole style
-      $build['category_header'] = [
-        '#markup' => '<h2>' . $category->getName() . '</h2>',
-      ];
-
-      // Show subcategories at top (like Star Trek Wormhole)
-      if (!empty($children)) {
-        $build['subcategories'] = [
-          '#type' => 'container',
-          '#attributes' => ['class' => ['category-subcategories']],
-          'content' => $this->buildSubcategoryList($children, $hotlinks_by_category),
-        ];
-      }
-
-      // Show links in this category
-      if (!empty($category_hotlinks)) {
-        $build['links'] = [
-          '#type' => 'container',
-          '#attributes' => ['class' => ['category-links']],
-          'title' => [
-            '#markup' => '<h3>Links in ' . $category->getName() . '</h3>',
-          ],
-          'list' => [
-            '#theme' => 'item_list',
-            '#items' => [],
-            '#attributes' => ['class' => ['hotlinks-list']],
-          ],
-        ];
-
-        foreach ($category_hotlinks as $hotlink) {
-          $item = $this->buildHotlinkItem($hotlink);
-          $build['links']['list']['#items'][] = ['#markup' => \Drupal::service('renderer')->render($item)];
-        }
-      } else {
-        $build['no_links'] = [
-          '#markup' => '<p>' . $this->t('No links found in this category.') . '</p>',
-        ];
-      }
-
-      $build['#attached']['library'][] = 'hotlinks/hotlinks.styles';
-
-    } catch (\Exception $e) {
-      $build['error'] = [
-        '#markup' => '<p><strong>Error:</strong> ' . $e->getMessage() . '</p>',
-      ];
-      \Drupal::logger('hotlinks')->error('Error in category: @message', ['@message' => $e->getMessage()]);
-    }
-
-    return $build;
-  }
-
-  public function categoryTitle(Term $category) {
-    return $this->t('@category', ['@category' => $category->getName()]);
-  }
-
-  /**
-   * Build front page categories in Star Trek Wormhole style.
-   */
-  private function buildFrontPageCategories($categories, $hotlinks_by_category) {
-    $build = [];
-
-    // Get parent categories (those without parents)
-    $parent_categories = [];
-    foreach ($categories as $category) {
-      $parents = $this->entityTypeManager
-        ->getStorage('taxonomy_term')
-        ->loadParents($category->id());
-
-      if (empty($parents)) {
-        $parent_categories[] = $category;
-      }
-    }
-
-    // Sort parent categories alphabetically
-    usort($parent_categories, function($a, $b) {
-      return strcmp($a->getName(), $b->getName());
-    });
-
-    foreach ($parent_categories as $parent_category) {
-      $parent_id = $parent_category->id();
-      
-      // Get children
-      $children = $this->entityTypeManager
-        ->getStorage('taxonomy_term')
-        ->loadChildren($parent_id);
-
-      // Count total links in parent and all children
-      $parent_count = isset($hotlinks_by_category[$parent_id]) ? count($hotlinks_by_category[$parent_id]) : 0;
-      $total_count = $parent_count;
-      
-      foreach ($children as $child) {
-        $child_count = isset($hotlinks_by_category[$child->id()]) ? count($hotlinks_by_category[$child->id()]) : 0;
-        $total_count += $child_count;
-      }
-
-      // Build parent category entry (show even if empty, like Star Trek Wormhole)
-      $build[$parent_id] = [
-        '#type' => 'container',
-        '#attributes' => ['class' => ['category-entry']],
-      ];
-
-      // Folder icon and parent category link
-      $parent_link = [
-        '#type' => 'link',
-        '#title' => $parent_category->getName(),
-        '#url' => \Drupal\Core\Url::fromRoute('hotlinks.category', ['category' => $parent_id]),
-        '#attributes' => ['class' => ['category-main-link']],
-      ];
-
-      $build[$parent_id]['main'] = [
-        '#markup' => '📁 ' . \Drupal::service('renderer')->render($parent_link) . '( ' . $total_count . ' )',
-      ];
-
-      // Subcategories list (like Star Trek Wormhole format)
-      if (!empty($children)) {
-        $subcategory_links = [];
-        
-        // Sort children alphabetically
-        $children_array = array_values($children);
-        usort($children_array, function($a, $b) {
-          return strcmp($a->getName(), $b->getName());
-        });
-
-        foreach ($children_array as $child) {
-          $child_count = isset($hotlinks_by_category[$child->id()]) ? count($hotlinks_by_category[$child->id()]) : 0;
-          
-          $subcategory_links[] = [
-            '#type' => 'link',
-            '#title' => $child->getName(),
-            '#url' => \Drupal\Core\Url::fromRoute('hotlinks.category', ['category' => $child->id()]),
-            '#attributes' => ['class' => ['subcategory-link']],
-          ];
-        }
-
-        if (!empty($subcategory_links)) {
-          $subcategory_markup = '';
-          foreach ($subcategory_links as $index => $link) {
-            if ($index > 0) {
-              $subcategory_markup .= ', ';
-            }
-            $subcategory_markup .= \Drupal::service('renderer')->render($link);
-          }
-          $subcategory_markup .= ', ...';
-
-          $build[$parent_id]['subcategories'] = [
-            '#markup' => '<div class="subcategories-line">' . $subcategory_markup . '</div>',
-          ];
+/**
+ * Implements hook_entity_presave().
+ */
+function hotlinks_entity_presave(EntityInterface $entity) {
+  // Auto-generate title from URL if not provided.
+  if ($entity->getEntityTypeId() == 'node' && $entity->bundle() == 'hotlink') {
+    if (empty($entity->getTitle()) && !$entity->get('field_hotlink_url')->isEmpty()) {
+      $url_field = $entity->get('field_hotlink_url')->first();
+      if ($url_field && $url_field->title) {
+        $entity->setTitle($url_field->title);
+      } elseif ($url_field && $url_field->uri) {
+        // Extract domain name as fallback title.
+        $parsed_url = parse_url($url_field->uri);
+        if (isset($parsed_url['host'])) {
+          $domain = $parsed_url['host'];
+          // Remove www. prefix if present.
+          $domain = preg_replace('/^www\./', '', $domain);
+          $entity->setTitle(ucfirst($domain));
         }
       }
-
-      // Add description from taxonomy term if it exists
-      $description = $parent_category->getDescription();
-      if (!empty($description)) {
-        $build[$parent_id]['description'] = [
-          '#markup' => '<div class="category-description">' . $description . '</div>',
-        ];
-      }
-    }
-
-    return $build;
-  }
-
-  /**
-   * Build subcategory list for category pages.
-   */
-  private function buildSubcategoryList($children, $hotlinks_by_category) {
-    $subcategory_links = [];
-    
-    // Sort children alphabetically
-    $children_array = array_values($children);
-    usort($children_array, function($a, $b) {
-      return strcmp($a->getName(), $b->getName());
-    });
-
-    foreach ($children_array as $child) {
-      $child_count = isset($hotlinks_by_category[$child->id()]) ? count($hotlinks_by_category[$child->id()]) : 0;
-      
-      $subcategory_links[] = [
-        '#type' => 'link',
-        '#title' => $child->getName() . ' (' . $child_count . ')',
-        '#url' => \Drupal\Core\Url::fromRoute('hotlinks.category', ['category' => $child->id()]),
-        '#attributes' => ['class' => ['subcategory-nav-link']],
-      ];
-    }
-
-    if (!empty($subcategory_links)) {
-      return [
-        '#theme' => 'item_list',
-        '#items' => $subcategory_links,
-        '#attributes' => ['class' => ['subcategory-nav-list']],
-        '#list_type' => 'ul',
-      ];
-    }
-
-    return [];
-  }
-
-  /**
-   * Group hotlinks by their categories.
-   */
-  private function groupHotlinksByCategory($hotlinks) {
-    $grouped = [];
-
-    foreach ($hotlinks as $hotlink) {
-      try {
-        $category_field = $hotlink->get('field_hotlink_category');
-        if (!$category_field->isEmpty()) {
-          foreach ($category_field as $category_item) {
-            $category_id = $category_item->target_id;
-            if (!isset($grouped[$category_id])) {
-              $grouped[$category_id] = [];
-            }
-            $grouped[$category_id][] = $hotlink;
-          }
-        }
-      } catch (\Exception $e) {
-        \Drupal::logger('hotlinks')->error('Error grouping hotlink @nid: @message', [
-          '@nid' => $hotlink->id(),
-          '@message' => $e->getMessage(),
-        ]);
-      }
-    }
-
-    return $grouped;
-  }
-
-  /**
-   * Filter hotlinks by category.
-   */
-  private function filterHotlinksByCategory($hotlinks, $category_id) {
-    $filtered = [];
-
-    foreach ($hotlinks as $hotlink) {
-      try {
-        $category_field = $hotlink->get('field_hotlink_category');
-        if (!$category_field->isEmpty()) {
-          foreach ($category_field as $category_item) {
-            if ($category_item->target_id == $category_id) {
-              $filtered[] = $hotlink;
-              break;
-            }
-          }
-        }
-      } catch (\Exception $e) {
-        \Drupal::logger('hotlinks')->error('Error filtering hotlink @nid: @message', [
-          '@nid' => $hotlink->id(),
-          '@message' => $e->getMessage(),
-        ]);
-      }
-    }
-
-    return $filtered;
-  }
-
-  /**
-   * Build a hotlink item display.
-   */
-  private function buildHotlinkItem($hotlink) {
-    try {
-      $url_field = $hotlink->get('field_hotlink_url');
-      $description_field = $hotlink->get('field_hotlink_description');
-      $thumbnail_field = $hotlink->get('field_hotlink_thumbnail');
-
-      if ($url_field->isEmpty()) {
-        return ['#markup' => '<div class="hotlink-item">Invalid hotlink - no URL</div>'];
-      }
-
-      $url_item = $url_field->first();
-      $link_title = $url_item->title ?: $hotlink->getTitle();
-      $link_url = $url_item->getUrl();
-
-      $description = '';
-      if (!$description_field->isEmpty()) {
-        $description_item = $description_field->first();
-        $description = $description_item->value;
-      }
-
-      $item = [
-        '#type' => 'container',
-        '#attributes' => ['class' => ['hotlink-item']],
-      ];
-
-      // Add thumbnail if available
-      if (!$thumbnail_field->isEmpty()) {
-        $thumbnail_item = $thumbnail_field->first();
-        $file = $thumbnail_item->entity;
-        
-        if ($file) {
-          $item['thumbnail'] = [
-            '#theme' => 'image_style',
-            '#style_name' => 'thumbnail',
-            '#uri' => $file->getFileUri(),
-            '#alt' => $thumbnail_item->alt ?: $link_title,
-            '#attributes' => ['class' => ['hotlink-thumbnail']],
-          ];
-        }
-      } else {
-        // Default thumbnail placeholder
-        $item['thumbnail'] = [
-          '#markup' => '<div class="hotlink-thumbnail-placeholder">🔗</div>',
-        ];
-      }
-
-      $item['content'] = [
-        '#type' => 'container',
-        '#attributes' => ['class' => ['hotlink-content']],
-      ];
-
-      $item['content']['link'] = [
-        '#type' => 'link',
-        '#title' => $link_title,
-        '#url' => $link_url,
-        '#attributes' => [
-          'target' => '_blank',
-          'rel' => 'noopener noreferrer',
-          'class' => ['hotlink-url'],
-        ],
-      ];
-
-      if ($description) {
-        $item['content']['description'] = [
-          '#markup' => '<div class="hotlink-description">' . $description . '</div>',
-        ];
-      }
-
-      return $item;
-
-    } catch (\Exception $e) {
-      \Drupal::logger('hotlinks')->error('Error building hotlink item: @message', ['@message' => $e->getMessage()]);
-      return ['#markup' => '<div class="hotlink-item">Error loading hotlink</div>'];
     }
   }
+}
+
+/**
+ * Helper function to get category hierarchy as formatted string.
+ *
+ * @param int $term_id
+ *   The taxonomy term ID.
+ *
+ * @return string
+ *   The formatted hierarchy string.
+ */
+function hotlinks_get_category_hierarchy($term_id) {
+  $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
+  $parents = $term_storage->loadAllParents($term_id);
+  
+  $hierarchy = [];
+  foreach (array_reverse($parents, TRUE) as $parent) {
+    $hierarchy[] = $parent->getName();
+  }
+  
+  return implode(' > ', $hierarchy);
+}
+
+/**
+ * Helper function to get all hotlinks count for a category including subcategories.
+ *
+ * @param int $category_id
+ *   The category term ID.
+ *
+ * @return int
+ *   The total count of hotlinks.
+ */
+function hotlinks_get_category_total_count($category_id) {
+  $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
+  $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+  
+  // Get all child term IDs.
+  $child_terms = $term_storage->loadTree('hotlink_categories', $category_id);
+  $category_ids = [$category_id];
+  
+  foreach ($child_terms as $child_term) {
+    $category_ids[] = $child_term->tid;
+  }
+
+  $query = $node_storage->getQuery()
+    ->condition('type', 'hotlink')
+    ->condition('status', 1)
+    ->condition('field_hotlink_category', $category_ids, 'IN')
+    ->accessCheck(TRUE);
+
+  return $query->count()->execute();
 }
