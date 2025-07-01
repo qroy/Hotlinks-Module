@@ -1,7 +1,7 @@
 name: Hotlinks
 type: module
 description: 'Maintains a categorized link index for organizing and displaying useful links.'
-package: Custom
+package: Hotlinks
 core_version_requirement: ^10 || ^11
 dependencies:
   - drupal:node

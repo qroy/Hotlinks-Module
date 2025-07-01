@@ -1,0 +1,7 @@
+name: Hotlinks Star Trek Categories
+type: module
+description: 'Provides Star Trek Wormhole style categories for the Hotlinks module.'
+package: Hotlinks
+core_version_requirement: ^10 || ^11
+dependencies:
+  - hotlinks:hotlinks

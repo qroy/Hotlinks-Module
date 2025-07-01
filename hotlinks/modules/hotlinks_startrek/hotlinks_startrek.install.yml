@@ -1,0 +1,240 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the Hotlinks Star Trek module.
+ */
+
+use Drupal\taxonomy\Entity\Term;
+
+/**
+ * Implements hook_install().
+ */
+function hotlinks_startrek_install() {
+  // Check if hotlink_categories vocabulary exists
+  $vocabulary = \Drupal::entityTypeManager()
+    ->getStorage('taxonomy_vocabulary')
+    ->load('hotlink_categories');
+
+  if (!$vocabulary) {
+    \Drupal::messenger()->addError(t('Hotlinks module must be installed and enabled before installing Star Trek categories.'));
+    return;
+  }
+
+  // Don't clear existing basic categories on install - just add Star Trek ones
+  // This allows users to have both if they want
+
+  // Create Star Trek Wormhole categories structure
+  $categories = [
+    'Star Trek Communities' => [
+      'description' => 'Connect with fellow fans through chat rooms, fan clubs, and discussion forums.',
+      'subcategories' => [
+        'Chat rooms',
+        'Fanclubs', 
+        'Forums',
+      ],
+    ],
+    'Star Trek Fandom' => [
+      'description' => 'Fan-created content including conventions, fiction, humor, and artistic works.',
+      'subcategories' => [
+        'Conventions',
+        'Fan Fiction',
+        'Humor',
+        'Fan Art',
+        'Fan Sites',
+      ],
+    ],
+    'Star Trek Games' => [
+      'description' => 'Video games and interactive entertainment across all gaming platforms.',
+      'subcategories' => [
+        'PC Games',
+        'XBox Games',
+        'Playstation Games',
+        'Mobile Games',
+        'Online Games',
+      ],
+    ],
+    'Star Trek International' => [
+      'description' => 'Star Trek resources and communities in languages other than English.',
+      'subcategories' => [
+        'German',
+        'Italian',
+        'Dutch',
+        'French',
+        'Spanish',
+        'Other Languages',
+      ],
+    ],
+    'Star Trek News' => [
+      'description' => 'Latest news, updates, and commentary about Star Trek from various sources.',
+      'subcategories' => [
+        'E-Zines',
+        'News Sites',
+        'Blogs',
+        'Podcasts',
+      ],
+    ],
+    'Star Trek Official' => [
+      'description' => 'Official CBS and Paramount websites and authorized content.',
+      'subcategories' => [
+        'CBS',
+        'Paramount',
+        'Official Sites',
+      ],
+    ],
+    'Star Trek Reference' => [
+      'description' => 'Comprehensive databases, guides, and reference materials for all things Star Trek.',
+      'subcategories' => [
+        'Aliens',
+        'Characters and Actors',
+        'Index Sites',
+        'Episode Guides',
+        'Technical Manuals',
+        'Memory Alpha/Beta',
+      ],
+    ],
+    'Star Trek Role Playing' => [
+      'description' => 'Interactive role-playing games, simulations, and character development communities.',
+      'subcategories' => [
+        'Chat',
+        'Forum',
+        'Email',
+        'Fleet Databases',
+        'Character Databases',
+      ],
+    ],
+    'Star Trek Services' => [
+      'description' => 'Web services, tools, and resources for Star Trek website owners and fans.',
+      'subcategories' => [
+        'Banner Exchanges',
+        'Webrings',
+        'Hosting',
+        'Tools',
+      ],
+    ],
+    'Star Trek Shopping' => [
+      'description' => 'Purchase official and licensed Star Trek merchandise, collectibles, and media.',
+      'subcategories' => [
+        'Apparel',
+        'Books',
+        'Collectibles',
+        'DVDs/Blu-ray',
+        'Models',
+      ],
+    ],
+    'Star Trek Universe' => [
+      'description' => 'Content organized by specific Star Trek series, movies, and eras.',
+      'subcategories' => [
+        'TOS (The Original Series)',
+        'TNG (The Next Generation)',
+        'DS9 (Deep Space Nine)',
+        'VOY (Voyager)',
+        'ENT (Enterprise)',
+        'DIS (Discovery)',
+        'PIC (Picard)',
+        'SNW (Strange New Worlds)',
+        'Movies',
+      ],
+    ],
+  ];
+
+  $created_count = 0;
+  foreach ($categories as $parent_name => $category_data) {
+    // Check if parent category already exists
+    $existing_parent = \Drupal::entityTypeManager()
+      ->getStorage('taxonomy_term')
+      ->loadByProperties([
+        'vid' => 'hotlink_categories',
+        'name' => $parent_name,
+      ]);
+
+    if (empty($existing_parent)) {
+      // Create parent category with description
+      $parent_term = Term::create([
+        'vid' => 'hotlink_categories',
+        'name' => $parent_name,
+        'description' => $category_data['description'],
+      ]);
+      $parent_term->save();
+      $created_count++;
+
+      // Create subcategories
+      foreach ($category_data['subcategories'] as $subcategory_name) {
+        $existing_child = \Drupal::entityTypeManager()
+          ->getStorage('taxonomy_term')
+          ->loadByProperties([
+            'vid' => 'hotlink_categories',
+            'name' => $subcategory_name,
+          ]);
+
+        if (empty($existing_child)) {
+          $child_term = Term::create([
+            'vid' => 'hotlink_categories',
+            'name' => $subcategory_name,
+            'parent' => $parent_term->id(),
+          ]);
+          $child_term->save();
+          $created_count++;
+        }
+      }
+    }
+  }
+
+  if ($created_count > 0) {
+    \Drupal::messenger()->addMessage(t('Star Trek categories have been added! Created @count new categories.', ['@count' => $created_count]));
+  } else {
+    \Drupal::messenger()->addMessage(t('Star Trek categories appear to already exist. No new categories were created.'));
+  }
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function hotlinks_startrek_uninstall() {
+  // Get all Star Trek categories
+  $star_trek_categories = [
+    'Star Trek Communities',
+    'Star Trek Fandom', 
+    'Star Trek Games',
+    'Star Trek International',
+    'Star Trek News',
+    'Star Trek Official',
+    'Star Trek Reference',
+    'Star Trek Role Playing',
+    'Star Trek Services',
+    'Star Trek Shopping',
+    'Star Trek Universe',
+  ];
+
+  $deleted_count = 0;
+  foreach ($star_trek_categories as $category_name) {
+    $terms = \Drupal::entityTypeManager()
+      ->getStorage('taxonomy_term')
+      ->loadByProperties([
+        'vid' => 'hotlink_categories',
+        'name' => $category_name,
+      ]);
+
+    foreach ($terms as $term) {
+      // Get all child terms first
+      $children = \Drupal::entityTypeManager()
+        ->getStorage('taxonomy_term')
+        ->loadChildren($term->id());
+      
+      // Delete children first
+      foreach ($children as $child) {
+        $child->delete();
+        $deleted_count++;
+      }
+      
+      // Then delete parent
+      $term->delete();
+      $deleted_count++;
+    }
+  }
+
+  // Don't restore basic categories on uninstall - just remove Star Trek ones
+  // This keeps the module simple and doesn't assume what users want
+
+  \Drupal::messenger()->addMessage(t('Removed @count Star Trek categories.', ['@count' => $deleted_count]));
+}

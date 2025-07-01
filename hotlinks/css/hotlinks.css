@@ -1,77 +1,173 @@
-.hotlinks-categories {
-  margin-bottom: 2rem;
+/**
+ * @file
+ * Minimal structural CSS for the Hotlinks module.
+ * Fonts, colors, and spacing inherit from theme.
+ */
+
+/* Main container */
+.hotlinks-index {
+  /* Structural layout only */
 }
 
-.hotlinks-category {
-  margin-bottom: 1rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+/* Category entries on front page */
+.category-entry {
+  /* Basic block display */
 }
 
-.hotlinks-subcategory {
-  margin-left: 1rem;
-  margin-top: 0.5rem;
-  border-left: 3px solid #007cba;
-  border-radius: 0 4px 4px 0;
-}
-
-.hotlinks-category summary {
-  padding: 0.75rem 1rem;
-  background-color: #f8f9fa;
-  border-bottom: 1px solid #ddd;
-  cursor: pointer;
+.category-main-link {
   font-weight: bold;
 }
 
-.hotlinks-category summary:hover {
-  background-color: #e9ecef;
+/* Subcategories line */
+.subcategories-line {
+  margin-left: 1em;
 }
 
+.subcategory-link {
+  /* Inherit theme link styling */
+}
+
+/* Category description */
+.category-description {
+  margin-left: 1em;
+  font-style: italic;
+}
+
+/* Category page styling */
+.category-subcategories {
+  border-bottom: 1px solid;
+  border-color: inherit;
+}
+
+.subcategory-nav-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.subcategory-nav-list li {
+  margin: 0;
+}
+
+.subcategory-nav-list li:not(:last-child)::after {
+  content: " • ";
+}
+
+.subcategory-nav-link {
+  /* Inherit theme link styling */
+}
+
+/* Hotlinks list */
 .hotlinks-list {
   list-style: none;
   padding: 0;
   margin: 0;
 }
 
-.hotlink-item {
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid #eee;
+.hotlinks-list li {
+  /* Basic list item */
 }
 
+/* Hotlink display mode styling */
+.node--view-mode-hotlinks-index,
+.hotlink-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75em;
+  margin-bottom: 0.75em;
+  padding-bottom: 0.75em;
+  border-bottom: 1px solid;
+  border-color: inherit;
+}
+
+.node--view-mode-hotlinks-index:last-child,
 .hotlink-item:last-child {
   border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
 }
 
-.hotlink-url {
-  font-weight: 500;
-  color: #0066cc;
+.node--view-mode-hotlinks-index .field--name-field-hotlink-thumbnail,
+.hotlink-thumbnail {
+  flex-shrink: 0;
+}
+
+.node--view-mode-hotlinks-index .field--name-field-hotlink-thumbnail img,
+.hotlink-thumbnail {
+  width: 64px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.hotlink-thumbnail-placeholder {
+  flex-shrink: 0;
+  width: 64px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed;
+  border-color: inherit;
+  border-radius: 4px;
+  opacity: 0.5;
+}
+
+.node--view-mode-hotlinks-index .field--name-title,
+.hotlink-content,
+.hotlink-node-link {
+  flex: 1;
+  min-width: 0;
+}
+
+.node--view-mode-hotlinks-index .field--name-title,
+.hotlink-node-link {
+  font-weight: bold;
+  margin-bottom: 0.25em;
+  display: block;
+}
+
+.node--view-mode-hotlinks-index .field--name-title a,
+.hotlink-node-link {
   text-decoration: none;
-  font-size: 1.1em;
 }
 
-.hotlink-url:hover {
+.node--view-mode-hotlinks-index .field--name-title a:hover,
+.hotlink-node-link:hover {
   text-decoration: underline;
-  color: #0052a3;
 }
 
-.hotlink-description {
-  margin-top: 0.5rem;
-  color: #666;
+.node--view-mode-hotlinks-index .field--name-field-hotlink-url,
+.hotlink-url {
+  margin-bottom: 0.25em;
   font-size: 0.9em;
-  line-height: 1.4;
 }
 
+.node--view-mode-hotlinks-index .field--name-field-hotlink-category {
+  margin-bottom: 0.25em;
+  font-size: 0.85em;
+}
+
+.node--view-mode-hotlinks-index .field--name-field-hotlink-description,
+.hotlink-description {
+  font-style: italic;
+  opacity: 0.8;
+  font-size: 0.9em;
+}
+
+/* Responsive adjustments */
 @media (max-width: 768px) {
-  .hotlinks-category summary {
-    padding: 0.5rem;
-    font-size: 0.9em;
+  .subcategory-nav-list {
+    flex-direction: column;
   }
-  
-  .hotlink-item {
-    padding: 0.5rem;
-  }
-  
-  .hotlink-url {
-    font-size: 1em;
-  }
+}
+
+/* Remove default list styling where needed */
+.hotlinks-index ul,
+.hotlinks-index li {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
