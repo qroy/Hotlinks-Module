@@ -1,4 +1,4 @@
-otlinks_reviews.ajax_rate:
+hotlinks_reviews.ajax_rate:
   path: '/hotlinks/ajax/rate/{node}'
   defaults:
     _controller: '\Drupal\hotlinks_reviews\Controller\HotlinksReviewsAjaxController::rate'

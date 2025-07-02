@@ -3,7 +3,7 @@
  * Interactive rating widget for Hotlinks Reviews.
  */
 
-(function ($, Drupal) {
+(function ($, Drupal, once) {
   'use strict';
 
   /**
@@ -11,8 +11,9 @@
    */
   Drupal.behaviors.hotlinksRatingWidget = {
     attach: function (context, settings) {
-      $('.hotlinks-rating-widget .rating-star', context).once('rating-widget').each(function () {
-        var $widget = $(this).closest('.hotlinks-rating-widget');
+      once('rating-widget', '.hotlinks-rating-widget .rating-star', context).forEach(function (element) {
+        var $star = $(element);
+        var $widget = $star.closest('.hotlinks-rating-widget');
         var $stars = $widget.find('.rating-star');
         var $hiddenInput = $widget.find('input[type="hidden"], input[type="number"]');
         var $label = $widget.find('.rating-label');
@@ -148,48 +149,51 @@
    */
   Drupal.behaviors.hotlinksAjaxRating = {
     attach: function (context, settings) {
-      $('.hotlinks-rating-widget', context).once('ajax-rating').on('ratingChanged', function (e, rating) {
-        var $widget = $(this);
-        var nodeId = $widget.data('node-id');
+      once('ajax-rating', '.hotlinks-rating-widget', context).forEach(function (element) {
+        var $widget = $(element);
         
-        if (!nodeId) return;
-        
-        // Show loading state
-        $widget.addClass('loading').attr('aria-busy', 'true');
-        
-        $.ajax({
-          url: '/hotlinks/ajax/rate/' + nodeId,
-          method: 'POST',
-          data: {
-            rating: rating,
-            _token: $widget.data('csrf-token')
-          },
-          success: function (response) {
-            if (response.status === 'success') {
-              // Update average rating display if present
-              var $avgDisplay = $('.field--name-field-hotlink-avg-rating');
-              if ($avgDisplay.length && response.newAverageHtml) {
-                $avgDisplay.find('.hotlinks-rating-stars').replaceWith(response.newAverageHtml);
+        $widget.on('ratingChanged', function (e, rating) {
+          var nodeId = $widget.data('node-id');
+          
+          if (!nodeId) return;
+          
+          // Show loading state
+          $widget.addClass('loading').attr('aria-busy', 'true');
+          
+          $.ajax({
+            url: '/hotlinks/ajax/rate/' + nodeId,
+            method: 'POST',
+            data: {
+              rating: rating,
+              _token: $widget.data('csrf-token')
+            },
+            success: function (response) {
+              if (response.status === 'success') {
+                // Update average rating display if present
+                var $avgDisplay = $('.field--name-field-hotlink-avg-rating');
+                if ($avgDisplay.length && response.newAverageHtml) {
+                  $avgDisplay.find('.hotlinks-rating-stars').replaceWith(response.newAverageHtml);
+                }
+                
+                // Show success message
+                Drupal.announce('Rating saved successfully');
+                
+                // Flash the widget briefly
+                $widget.addClass('success-flash');
+                setTimeout(function () {
+                  $widget.removeClass('success-flash');
+                }, 1000);
+              } else {
+                Drupal.announce('Error saving rating: ' + response.message);
               }
-              
-              // Show success message
-              Drupal.announce('Rating saved successfully');
-              
-              // Flash the widget briefly
-              $widget.addClass('success-flash');
-              setTimeout(function () {
-                $widget.removeClass('success-flash');
-              }, 1000);
-            } else {
-              Drupal.announce('Error saving rating: ' + response.message);
+            },
+            error: function () {
+              Drupal.announce('Error saving rating. Please try again.');
+            },
+            complete: function () {
+              $widget.removeClass('loading').attr('aria-busy', 'false');
             }
-          },
-          error: function () {
-            Drupal.announce('Error saving rating. Please try again.');
-          },
-          complete: function () {
-            $widget.removeClass('loading').attr('aria-busy', 'false');
-          }
+          });
         });
       });
     }
@@ -200,8 +204,8 @@
    */
   Drupal.behaviors.hotlinksAnimatedStars = {
     attach: function (context, settings) {
-      $('.hotlinks-rating-stars', context).once('animated-stars').each(function () {
-        var $container = $(this);
+      once('animated-stars', '.hotlinks-rating-stars', context).forEach(function (element) {
+        var $container = $(element);
         var rating = parseFloat($container.data('rating')) || 0;
         var maxRating = parseInt($container.data('max-rating')) || 5;
         
@@ -260,8 +264,8 @@
    */
   Drupal.behaviors.hotlinksReviewSummary = {
     attach: function (context, settings) {
-      $('.hotlinks-review-summary .rating-breakdown', context).once('interactive-breakdown').each(function () {
-        var $breakdown = $(this);
+      once('interactive-breakdown', '.hotlinks-review-summary .rating-breakdown', context).forEach(function (element) {
+        var $breakdown = $(element);
         
         // Animate bars on load
         $breakdown.find('.bar-fill').each(function () {
@@ -280,30 +284,4 @@
     }
   };
 
-  /**
-   * Success flash animation CSS class.
-   */
-  $(document).ready(function () {
-    $('<style>')
-      .prop('type', 'text/css')
-      .html(`
-        .hotlinks-rating-widget.success-flash {
-          background: rgba(0, 255, 0, 0.1);
-          border-radius: 4px;
-          transition: background 0.3s ease;
-        }
-        
-        .hotlinks-rating-star.animate-in {
-          animation: starPop 0.3s ease-out;
-        }
-        
-        @keyframes starPop {
-          0% { transform: scale(0.5); opacity: 0; }
-          50% { transform: scale(1.2); }
-          100% { transform: scale(1); opacity: 1; }
-        }
-      `)
-      .appendTo('head');
-  });
-
-})(jQuery, Drupal);
+})(jQuery, Drupal, once);

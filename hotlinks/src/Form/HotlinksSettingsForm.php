@@ -29,7 +29,8 @@ class HotlinksSettingsForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
-    $config = $this->config('hotlinks.settings');
+    $reviews_enabled = \Drupal::moduleHandler()->moduleExists('hotlinks_reviews');
+	$config = $this->config('hotlinks.settings');
 
     $form['display'] = [
       '#type' => 'fieldset',
@@ -208,6 +209,33 @@ class HotlinksSettingsForm extends ConfigFormBase {
         ]) . '</p>',
       ];
     }
+	
+	// Reviews settings (only if Reviews submodule is enabled)
+if ($reviews_enabled) {
+  $form['reviews'] = [
+    '#type' => 'fieldset',
+    '#title' => $this->t('Reviews & Ratings'),
+    '#description' => $this->t('Configure the rating and review system.'),
+  ];
+
+  $form['reviews']['allow_anonymous_reviews'] = [
+    '#type' => 'checkbox',
+    '#title' => $this->t('Allow anonymous reviews'),
+    '#default_value' => $config->get('allow_anonymous_reviews') ?? FALSE,
+  ];
+
+  $form['reviews']['moderate_reviews'] = [
+    '#type' => 'checkbox',
+    '#title' => $this->t('Moderate new reviews'),
+    '#default_value' => $config->get('moderate_reviews') ?? TRUE,
+  ];
+
+  $form['reviews']['starfleet_approval'] = [
+    '#type' => 'checkbox',
+    '#title' => $this->t('Show Starfleet approval badges'),
+    '#default_value' => $config->get('starfleet_approval') ?? TRUE,
+  ];
+}
 
     return parent::buildForm($form, $form_state);
   }
@@ -274,6 +302,13 @@ class HotlinksSettingsForm extends ConfigFormBase {
       $this->regenerateThumbnails(FALSE);
       $this->messenger()->addMessage($this->t('Missing thumbnail generation has been queued.'));
     }
+	// Reviews settings (only if submodule is enabled)
+    if (\Drupal::moduleHandler()->moduleExists('hotlinks_reviews')) {
+      $config
+        ->set('allow_anonymous_reviews', $form_state->getValue('allow_anonymous_reviews'))
+        ->set('moderate_reviews', $form_state->getValue('moderate_reviews'))
+        ->set('starfleet_approval', $form_state->getValue('starfleet_approval'));
+	}
 
     parent::submitForm($form, $form_state);
   }
