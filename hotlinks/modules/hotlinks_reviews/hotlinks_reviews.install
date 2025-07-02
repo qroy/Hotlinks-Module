@@ -3,7 +3,7 @@
 /**
  * @file
  * Install, update and uninstall functions for the Hotlinks Reviews submodule.
- * Now includes proper database schema implementation.
+ * Uses proper database schema implementation.
  */
 
 use Drupal\field\Entity\FieldStorageConfig;
@@ -644,18 +644,17 @@ function _hotlinks_reviews_update_view_displays() {
   if ($view_display) {
     $view_display
       ->setComponent('field_hotlink_avg_rating', [
-        'type' => 'number_decimal',
+        'type' => 'hotlinks_rating_stars',
         'label' => 'inline',
         'weight' => 1,
         'settings' => [
-          'thousand_separator' => '',
-          'decimal_separator' => '.',
-          'scale' => 1,
-          'prefix_suffix' => TRUE,
+          'max_rating' => 5,
+          'show_count' => TRUE,
+          'compact' => FALSE,
         ],
       ])
       ->setComponent('field_hotlink_rating', [
-        'type' => 'number_integer',
+        'type' => 'hotlinks_user_rating_display',
         'label' => 'inline',
         'weight' => 2,
       ])
@@ -666,14 +665,12 @@ function _hotlinks_reviews_update_view_displays() {
       ])
       ->setComponent('field_hotlink_review_count', [
         'type' => 'number_integer',
-        'label' => 'inline',
+        'label' => 'hidden',
         'weight' => 3,
       ])
       ->save();
 
     \Drupal::logger('hotlinks_reviews')->info('Updated default view display for reviews');
-  } else {
-    \Drupal::logger('hotlinks_reviews')->warning('Default view display for hotlink not found. Cannot update view display.');
   }
 
   // Update hotlinks_index view display
@@ -681,14 +678,13 @@ function _hotlinks_reviews_update_view_displays() {
   if ($index_view_display) {
     $index_view_display
       ->setComponent('field_hotlink_avg_rating', [
-        'type' => 'number_decimal',
+        'type' => 'hotlinks_rating_stars',
         'label' => 'hidden',
         'weight' => 2,
         'settings' => [
-          'thousand_separator' => '',
-          'decimal_separator' => '.',
-          'scale' => 1,
-          'prefix_suffix' => TRUE,
+          'max_rating' => 5,
+          'show_count' => TRUE,
+          'compact' => TRUE,
         ],
       ])
       ->removeComponent('field_hotlink_rating')
@@ -697,8 +693,6 @@ function _hotlinks_reviews_update_view_displays() {
       ->save();
 
     \Drupal::logger('hotlinks_reviews')->info('Updated hotlinks_index view display for reviews');
-  } else {
-    \Drupal::logger('hotlinks_reviews')->warning('Hotlinks_index view display not found. Reviews may not display properly in category listings.');
   }
 }
 
@@ -826,291 +820,4 @@ function hotlinks_reviews_uninstall() {
   \Drupal::state()->delete('hotlinks_reviews.rate_limits');
 
   \Drupal::messenger()->addMessage(t('Hotlinks Reviews uninstalled. All rating and review data has been removed.'));
-}
-
-/**
- * Migrate data from state storage to database tables.
- */
-function hotlinks_reviews_update_8100() {
-  $connection = \Drupal::database();
-  $migrated_ratings = 0;
-  $migrated_reviews = 0;
-  
-  try {
-    // Migrate ratings from state to database
-    $ratings_data = \Drupal::state()->get('hotlinks_reviews.ratings', []);
-    
-    foreach ($ratings_data as $node_id => $user_ratings) {
-      foreach ($user_ratings as $user_id => $rating_data) {
-        // Validate the data before migration
-        if (!is_numeric($rating_data['rating']) || $rating_data['rating'] < 1 || $rating_data['rating'] > 5) {
-          continue;
-        }
-        
-        try {
-          $connection->insert('hotlinks_ratings')
-            ->fields([
-              'node_id' => (int) $node_id,
-              'user_id' => (int) $user_id,
-              'rating' => (int) $rating_data['rating'],
-              'ip_address' => isset($rating_data['ip_address']) ? substr($rating_data['ip_address'], 0, 45) : NULL,
-              'created' => isset($rating_data['timestamp']) ? (int) $rating_data['timestamp'] : time(),
-              'updated' => isset($rating_data['timestamp']) ? (int) $rating_data['timestamp'] : time(),
-            ])
-            ->execute();
-          $migrated_ratings++;
-        } catch (\Exception $e) {
-          // Skip duplicate or invalid entries
-          \Drupal::logger('hotlinks_reviews')->warning('Failed to migrate rating for node @node user @user: @error', [
-            '@node' => $node_id,
-            '@user' => $user_id,
-            '@error' => $e->getMessage(),
-          ]);
-        }
-      }
-    }
-    
-    // Migrate reviews from state to database
-    $reviews_data = \Drupal::state()->get('hotlinks_reviews.reviews', []);
-    
-    foreach ($reviews_data as $node_id => $user_reviews) {
-      foreach ($user_reviews as $user_id => $review_data) {
-        // Validate the data before migration
-        if (empty($review_data['review']) || strlen($review_data['review']) < 10) {
-          continue;
-        }
-        
-        try {
-          $connection->insert('hotlinks_reviews')
-            ->fields([
-              'node_id' => (int) $node_id,
-              'user_id' => (int) $user_id,
-              'review_text' => substr($review_data['review'], 0, 65535), // Ensure it fits in TEXT field
-              'status' => isset($review_data['status']) ? $review_data['status'] : 'approved',
-              'user_name' => isset($review_data['user_name']) ? substr($review_data['user_name'], 0, 255) : NULL,
-              'ip_address' => isset($review_data['ip_address']) ? substr($review_data['ip_address'], 0, 45) : NULL,
-              'created' => isset($review_data['timestamp']) ? (int) $review_data['timestamp'] : time(),
-              'updated' => isset($review_data['timestamp']) ? (int) $review_data['timestamp'] : time(),
-            ])
-            ->execute();
-          $migrated_reviews++;
-        } catch (\Exception $e) {
-          // Skip duplicate or invalid entries
-          \Drupal::logger('hotlinks_reviews')->warning('Failed to migrate review for node @node user @user: @error', [
-            '@node' => $node_id,
-            '@user' => $user_id,
-            '@error' => $e->getMessage(),
-          ]);
-        }
-      }
-    }
-    
-    // Recalculate statistics for all nodes
-    _hotlinks_reviews_recalculate_all_statistics();
-    
-    // Clear old state data after successful migration
-    \Drupal::state()->delete('hotlinks_reviews.ratings');
-    \Drupal::state()->delete('hotlinks_reviews.reviews');
-    \Drupal::state()->delete('hotlinks_reviews.rate_limits');
-    
-    return t('Successfully migrated @ratings ratings and @reviews reviews to database tables.', [
-      '@ratings' => $migrated_ratings,
-      '@reviews' => $migrated_reviews,
-    ]);
-    
-  } catch (\Exception $e) {
-    \Drupal::logger('hotlinks_reviews')->error('Error during data migration: @error', ['@error' => $e->getMessage()]);
-    throw new \Exception('Failed to migrate review data: ' . $e->getMessage());
-  }
-}
-
-/**
- * Recalculate statistics for all hotlinks.
- */
-function _hotlinks_reviews_recalculate_all_statistics() {
-  $connection = \Drupal::database();
-  
-  // Get all nodes with ratings or reviews
-  $query = $connection->select('hotlinks_ratings', 'r')
-    ->fields('r', ['node_id'])
-    ->distinct();
-  $node_ids = $query->execute()->fetchCol();
-  
-  // Also include nodes with reviews but no ratings
-  $query = $connection->select('hotlinks_reviews', 'rv')
-    ->fields('rv', ['node_id'])
-    ->distinct();
-  $review_node_ids = $query->execute()->fetchCol();
-  
-  // Merge and deduplicate
-  $all_node_ids = array_unique(array_merge($node_ids, $review_node_ids));
-  
-  foreach ($all_node_ids as $node_id) {
-    _hotlinks_reviews_update_node_statistics((int) $node_id);
-  }
-  
-  \Drupal::logger('hotlinks_reviews')->info('Recalculated statistics for @count nodes', ['@count' => count($all_node_ids)]);
-}
-
-/**
- * Update statistics for a specific node.
- */
-function _hotlinks_reviews_update_node_statistics($node_id) {
-  $connection = \Drupal::database();
-  
-  // Calculate rating statistics
-  $rating_query = $connection->select('hotlinks_ratings', 'r')
-    ->condition('r.node_id', $node_id);
-  $rating_query->addExpression('COUNT(*)', 'total_ratings');
-  $rating_query->addExpression('SUM(rating)', 'rating_sum');
-  $rating_query->addExpression('AVG(rating)', 'average_rating');
-  $rating_query->addExpression('SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END)', 'rating_1_count');
-  $rating_query->addExpression('SUM(CASE WHEN rating = 2 THEN 1 ELSE 0 END)', 'rating_2_count');
-  $rating_query->addExpression('SUM(CASE WHEN rating = 3 THEN 1 ELSE 0 END)', 'rating_3_count');
-  $rating_query->addExpression('SUM(CASE WHEN rating = 4 THEN 1 ELSE 0 END)', 'rating_4_count');
-  $rating_query->addExpression('SUM(CASE WHEN rating = 5 THEN 1 ELSE 0 END)', 'rating_5_count');
-  
-  $rating_stats = $rating_query->execute()->fetchAssoc();
-  
-  // Calculate review statistics
-  $review_query = $connection->select('hotlinks_reviews', 'rv')
-    ->condition('rv.node_id', $node_id)
-    ->condition('rv.status', 'approved');
-  $review_query->addExpression('COUNT(*)', 'total_reviews');
-  
-  $review_stats = $review_query->execute()->fetchAssoc();
-  
-  // Merge statistics and handle null values
-  $stats = [
-    'node_id' => $node_id,
-    'total_ratings' => (int) ($rating_stats['total_ratings'] ?: 0),
-    'total_reviews' => (int) ($review_stats['total_reviews'] ?: 0),
-    'average_rating' => round((float) ($rating_stats['average_rating'] ?: 0), 2),
-    'rating_sum' => (int) ($rating_stats['rating_sum'] ?: 0),
-    'rating_1_count' => (int) ($rating_stats['rating_1_count'] ?: 0),
-    'rating_2_count' => (int) ($rating_stats['rating_2_count'] ?: 0),
-    'rating_3_count' => (int) ($rating_stats['rating_3_count'] ?: 0),
-    'rating_4_count' => (int) ($rating_stats['rating_4_count'] ?: 0),
-    'rating_5_count' => (int) ($rating_stats['rating_5_count'] ?: 0),
-    'last_updated' => time(),
-  ];
-  
-  // Update or insert statistics
-  $connection->merge('hotlinks_statistics')
-    ->key(['node_id' => $node_id])
-    ->fields($stats)
-    ->execute();
-    
-  // Update the node fields if they exist
-  try {
-    $node = \Drupal::entityTypeManager()->getStorage('node')->load($node_id);
-    if ($node && $node->bundle() === 'hotlink') {
-      $updated = FALSE;
-      
-      if ($node->hasField('field_hotlink_avg_rating')) {
-        $node->set('field_hotlink_avg_rating', $stats['average_rating']);
-        $updated = TRUE;
-      }
-      
-      if ($node->hasField('field_hotlink_review_count')) {
-        $node->set('field_hotlink_review_count', $stats['total_ratings']);
-        $updated = TRUE;
-      }
-      
-      if ($updated) {
-        $node->save();
-      }
-    }
-  } catch (\Exception $e) {
-    \Drupal::logger('hotlinks_reviews')->warning('Failed to update node fields for @nid: @error', [
-      '@nid' => $node_id,
-      '@error' => $e->getMessage(),
-    ]);
-  }
-}
-
-/**
- * Create missing fields if they don't exist.
- */
-function hotlinks_reviews_update_8001() {
-  $fields_created = [];
-  
-  try {
-    // Check and create each field
-    if (!FieldConfig::loadByName('node', 'hotlink', 'field_hotlink_rating')) {
-      _hotlinks_reviews_create_rating_field();
-      $fields_created[] = 'field_hotlink_rating';
-    }
-    
-    if (!FieldConfig::loadByName('node', 'hotlink', 'field_hotlink_review')) {
-      _hotlinks_reviews_create_review_field();
-      $fields_created[] = 'field_hotlink_review';
-    }
-    
-    if (!FieldConfig::loadByName('node', 'hotlink', 'field_hotlink_avg_rating')) {
-      _hotlinks_reviews_create_avg_rating_field();
-      $fields_created[] = 'field_hotlink_avg_rating';
-    }
-    
-    if (!FieldConfig::loadByName('node', 'hotlink', 'field_hotlink_review_count')) {
-      _hotlinks_reviews_create_review_count_field();
-      $fields_created[] = 'field_hotlink_review_count';
-    }
-
-    if (!empty($fields_created)) {
-      _hotlinks_reviews_update_form_display();
-      _hotlinks_reviews_update_view_displays();
-      _hotlinks_reviews_add_config();
-      
-      return t('Created missing review fields: @fields', [
-        '@fields' => implode(', ', $fields_created)
-      ]);
-    }
-
-    return t('All review fields already exist.');
-    
-  } catch (\Exception $e) {
-    \Drupal::logger('hotlinks_reviews')->error('Error in update 8001: @error', ['@error' => $e->getMessage()]);
-    return t('Error creating review fields. Check logs for details: @error', ['@error' => $e->getMessage()]);
-  }
-}
-
-/**
- * Fix installation process and verify all components.
- */
-function hotlinks_reviews_update_8002() {
-  try {
-    // Verify dependencies still exist
-    if (!\Drupal::moduleHandler()->moduleExists('hotlinks')) {
-      throw new \Exception('Hotlinks module not found. Cannot continue.');
-    }
-
-    $node_type = \Drupal::entityTypeManager()
-      ->getStorage('node_type')
-      ->load('hotlink');
-
-    if (!$node_type) {
-      throw new \Exception('Hotlinks content type not found. Please reinstall the main Hotlinks module.');
-    }
-
-    // Recreate all fields and displays
-    _hotlinks_reviews_create_rating_field();
-    _hotlinks_reviews_create_review_field();
-    _hotlinks_reviews_create_avg_rating_field();
-    _hotlinks_reviews_create_review_count_field();
-    
-    _hotlinks_reviews_update_form_display();
-    _hotlinks_reviews_update_view_displays();
-    _hotlinks_reviews_add_config();
-
-    // Clear caches
-    \Drupal::entityTypeManager()->clearCachedDefinitions();
-    \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
-
-    return t('Fixed Hotlinks Reviews installation and verified all components.');
-    
-  } catch (\Exception $e) {
-    \Drupal::logger('hotlinks_reviews')->error('Error in update 8002: @error', ['@error' => $e->getMessage()]);
-    return t('Error fixing installation. Check logs for details: @error', ['@error' => $e->getMessage()]);
-  }
 }
