@@ -14,42 +14,53 @@ use Drupal\Core\Entity\Entity\EntityViewDisplay;
  * Implements hook_install().
  */
 function hotlinks_reviews_install() {
-  // Ensure the main hotlinks module is fully installed first
+  // Strict dependency checking
   if (!\Drupal::moduleHandler()->moduleExists('hotlinks')) {
-    \Drupal::messenger()->addError(t('Hotlinks module must be installed and enabled before installing Hotlinks Reviews.'));
-    return;
+    throw new \Exception('Hotlinks module must be installed and enabled before installing Hotlinks Reviews.');
   }
 
-  // Check if hotlink content type exists
+  // Verify hotlink content type exists
   $node_type = \Drupal::entityTypeManager()
     ->getStorage('node_type')
     ->load('hotlink');
 
   if (!$node_type) {
-    \Drupal::messenger()->addError(t('Hotlinks content type not found. Please ensure the main Hotlinks module is properly installed.'));
-    return;
+    throw new \Exception('Hotlinks content type not found. Please ensure the main Hotlinks module is properly installed and run update hooks if necessary.');
   }
 
-  // Create the rating field
-  _hotlinks_reviews_create_rating_field();
-  
-  // Create the review field
-  _hotlinks_reviews_create_review_field();
-  
-  // Create the average rating field
-  _hotlinks_reviews_create_avg_rating_field();
-  
-  // Create the review count field
-  _hotlinks_reviews_create_review_count_field();
+  // Verify hotlink_categories vocabulary exists
+  $vocabulary = \Drupal::entityTypeManager()
+    ->getStorage('taxonomy_vocabulary')
+    ->load('hotlink_categories');
 
-  // Update displays
-  _hotlinks_reviews_update_form_display();
-  _hotlinks_reviews_update_view_displays();
+  if (!$vocabulary) {
+    throw new \Exception('Hotlinks vocabulary not found. Please ensure the main Hotlinks module is properly installed and run update hooks if necessary.');
+  }
 
-  // Add configuration
-  _hotlinks_reviews_add_config();
+  try {
+    // Create fields in order
+    _hotlinks_reviews_create_rating_field();
+    _hotlinks_reviews_create_review_field();
+    _hotlinks_reviews_create_avg_rating_field();
+    _hotlinks_reviews_create_review_count_field();
 
-  \Drupal::messenger()->addMessage(t('Hotlinks Reviews installed successfully! You can now rate and review hotlinks.'));
+    // Update displays
+    _hotlinks_reviews_update_form_display();
+    _hotlinks_reviews_update_view_displays();
+
+    // Add configuration
+    _hotlinks_reviews_add_config();
+
+    // Clear caches
+    \Drupal::entityTypeManager()->clearCachedDefinitions();
+    \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+
+    \Drupal::messenger()->addMessage(t('Hotlinks Reviews installed successfully! You can now rate and review hotlinks.'));
+
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks_reviews')->error('Error during Hotlinks Reviews installation: @message', ['@message' => $e->getMessage()]);
+    throw new \Exception('Failed to install Hotlinks Reviews: ' . $e->getMessage());
+  }
 }
 
 /**
@@ -70,6 +81,7 @@ function _hotlinks_reviews_create_rating_field() {
       ],
     ]);
     $field_storage->save();
+    \Drupal::logger('hotlinks_reviews')->info('Created field_hotlink_rating storage');
   }
 
   // Check if field config exists
@@ -87,6 +99,7 @@ function _hotlinks_reviews_create_rating_field() {
       ],
     ]);
     $field_config->save();
+    \Drupal::logger('hotlinks_reviews')->info('Created field_hotlink_rating config');
   }
 }
 
@@ -104,6 +117,7 @@ function _hotlinks_reviews_create_review_field() {
       'cardinality' => 1,
     ]);
     $field_storage->save();
+    \Drupal::logger('hotlinks_reviews')->info('Created field_hotlink_review storage');
   }
 
   // Check if field config exists
@@ -117,6 +131,7 @@ function _hotlinks_reviews_create_review_field() {
       'required' => FALSE,
     ]);
     $field_config->save();
+    \Drupal::logger('hotlinks_reviews')->info('Created field_hotlink_review config');
   }
 }
 
@@ -138,6 +153,7 @@ function _hotlinks_reviews_create_avg_rating_field() {
       ],
     ]);
     $field_storage->save();
+    \Drupal::logger('hotlinks_reviews')->info('Created field_hotlink_avg_rating storage');
   }
 
   // Check if field config exists
@@ -151,6 +167,7 @@ function _hotlinks_reviews_create_avg_rating_field() {
       'required' => FALSE,
     ]);
     $field_config->save();
+    \Drupal::logger('hotlinks_reviews')->info('Created field_hotlink_avg_rating config');
   }
 }
 
@@ -168,6 +185,7 @@ function _hotlinks_reviews_create_review_count_field() {
       'cardinality' => 1,
     ]);
     $field_storage->save();
+    \Drupal::logger('hotlinks_reviews')->info('Created field_hotlink_review_count storage');
   }
 
   // Check if field config exists
@@ -181,6 +199,7 @@ function _hotlinks_reviews_create_review_count_field() {
       'required' => FALSE,
     ]);
     $field_config->save();
+    \Drupal::logger('hotlinks_reviews')->info('Created field_hotlink_review_count config');
   }
 }
 
@@ -189,29 +208,34 @@ function _hotlinks_reviews_create_review_count_field() {
  */
 function _hotlinks_reviews_update_form_display() {
   $form_display = EntityFormDisplay::load('node.hotlink.default');
-  if ($form_display) {
-    $form_display
-      ->setComponent('field_hotlink_rating', [
-        'type' => 'number',
-        'weight' => 5,
-        'settings' => [
-          'placeholder' => 'Rate 1-5 stars',
-          'min' => 1,
-          'max' => 5,
-        ],
-      ])
-      ->setComponent('field_hotlink_review', [
-        'type' => 'text_textarea',
-        'weight' => 6,
-        'settings' => [
-          'rows' => 4,
-          'placeholder' => 'Share your thoughts about this link...',
-        ],
-      ])
-      ->removeComponent('field_hotlink_avg_rating')
-      ->removeComponent('field_hotlink_review_count')
-      ->save();
+  if (!$form_display) {
+    \Drupal::logger('hotlinks_reviews')->warning('Default form display for hotlink not found. Cannot update form display.');
+    return;
   }
+
+  $form_display
+    ->setComponent('field_hotlink_rating', [
+      'type' => 'number',
+      'weight' => 5,
+      'settings' => [
+        'placeholder' => 'Rate 1-5 stars',
+        'min' => 1,
+        'max' => 5,
+      ],
+    ])
+    ->setComponent('field_hotlink_review', [
+      'type' => 'text_textarea',
+      'weight' => 6,
+      'settings' => [
+        'rows' => 4,
+        'placeholder' => 'Share your thoughts about this link...',
+      ],
+    ])
+    ->removeComponent('field_hotlink_avg_rating')
+    ->removeComponent('field_hotlink_review_count')
+    ->save();
+
+  \Drupal::logger('hotlinks_reviews')->info('Updated form display for reviews');
 }
 
 /**
@@ -249,6 +273,10 @@ function _hotlinks_reviews_update_view_displays() {
         'weight' => 3,
       ])
       ->save();
+
+    \Drupal::logger('hotlinks_reviews')->info('Updated default view display for reviews');
+  } else {
+    \Drupal::logger('hotlinks_reviews')->warning('Default view display for hotlink not found. Cannot update view display.');
   }
 
   // Update hotlinks_index view display
@@ -270,6 +298,10 @@ function _hotlinks_reviews_update_view_displays() {
       ->removeComponent('field_hotlink_review')
       ->removeComponent('field_hotlink_review_count')
       ->save();
+
+    \Drupal::logger('hotlinks_reviews')->info('Updated hotlinks_index view display for reviews');
+  } else {
+    \Drupal::logger('hotlinks_reviews')->warning('Hotlinks_index view display not found. Reviews may not display properly in category listings.');
   }
 }
 
@@ -278,17 +310,38 @@ function _hotlinks_reviews_update_view_displays() {
  */
 function _hotlinks_reviews_add_config() {
   $config = \Drupal::configFactory()->getEditable('hotlinks.settings');
-  $config
-    ->set('reviews_enabled', TRUE)
-    ->set('allow_anonymous_reviews', FALSE)
-    ->set('require_review_text', FALSE)
-    ->set('moderate_reviews', TRUE)
-    ->set('allow_review_updates', TRUE)
-    ->set('show_reviewer_names', TRUE)
-    ->set('min_rating_for_display', 1)
-    ->set('use_star_trek_labels', FALSE)
-    ->set('starfleet_approval', TRUE)
-    ->save();
+  
+  // Only set values if they don't already exist
+  if ($config->get('reviews_enabled') === NULL) {
+    $config->set('reviews_enabled', TRUE);
+  }
+  if ($config->get('allow_anonymous_reviews') === NULL) {
+    $config->set('allow_anonymous_reviews', FALSE);
+  }
+  if ($config->get('require_review_text') === NULL) {
+    $config->set('require_review_text', FALSE);
+  }
+  if ($config->get('moderate_reviews') === NULL) {
+    $config->set('moderate_reviews', TRUE);
+  }
+  if ($config->get('allow_review_updates') === NULL) {
+    $config->set('allow_review_updates', TRUE);
+  }
+  if ($config->get('show_reviewer_names') === NULL) {
+    $config->set('show_reviewer_names', TRUE);
+  }
+  if ($config->get('min_rating_for_display') === NULL) {
+    $config->set('min_rating_for_display', 1);
+  }
+  if ($config->get('use_star_trek_labels') === NULL) {
+    $config->set('use_star_trek_labels', FALSE);
+  }
+  if ($config->get('starfleet_approval') === NULL) {
+    $config->set('starfleet_approval', TRUE);
+  }
+  
+  $config->save();
+  \Drupal::logger('hotlinks_reviews')->info('Added reviews configuration settings');
 }
 
 /**
@@ -304,16 +357,34 @@ function hotlinks_reviews_uninstall() {
   ];
 
   foreach ($fields_to_delete as $field_name) {
-    // Delete field config
-    $field_config = FieldConfig::loadByName('node', 'hotlink', $field_name);
-    if ($field_config) {
-      $field_config->delete();
-    }
+    try {
+      // Delete field config first
+      $field_config = FieldConfig::loadByName('node', 'hotlink', $field_name);
+      if ($field_config) {
+        $field_config->delete();
+        \Drupal::logger('hotlinks_reviews')->info('Deleted field config: @field', ['@field' => $field_name]);
+      }
 
-    // Delete field storage
-    $field_storage = FieldStorageConfig::loadByName('node', $field_name);
-    if ($field_storage) {
-      $field_storage->delete();
+      // Check if any other bundles use this field storage
+      $field_storage = FieldStorageConfig::loadByName('node', $field_name);
+      if ($field_storage) {
+        $bundles = $field_storage->getBundles();
+        if (empty($bundles)) {
+          // Safe to delete storage if no bundles use it
+          $field_storage->delete();
+          \Drupal::logger('hotlinks_reviews')->info('Deleted field storage: @field', ['@field' => $field_name]);
+        } else {
+          \Drupal::logger('hotlinks_reviews')->info('Field storage @field still used by other bundles: @bundles', [
+            '@field' => $field_name,
+            '@bundles' => implode(', ', $bundles),
+          ]);
+        }
+      }
+    } catch (\Exception $e) {
+      \Drupal::logger('hotlinks_reviews')->error('Error deleting field @field: @error', [
+        '@field' => $field_name,
+        '@error' => $e->getMessage(),
+      ]);
     }
   }
 
@@ -334,6 +405,7 @@ function hotlinks_reviews_uninstall() {
   // Clear review data from state
   \Drupal::state()->delete('hotlinks_reviews.ratings');
   \Drupal::state()->delete('hotlinks_reviews.reviews');
+  \Drupal::state()->delete('hotlinks_reviews.starfleet_approved');
 
   \Drupal::messenger()->addMessage(t('Hotlinks Reviews uninstalled. All rating and review data has been removed.'));
 }
@@ -344,36 +416,82 @@ function hotlinks_reviews_uninstall() {
 function hotlinks_reviews_update_8001() {
   $fields_created = [];
   
-  // Check and create each field
-  if (!FieldConfig::loadByName('node', 'hotlink', 'field_hotlink_rating')) {
-    _hotlinks_reviews_create_rating_field();
-    $fields_created[] = 'field_hotlink_rating';
-  }
-  
-  if (!FieldConfig::loadByName('node', 'hotlink', 'field_hotlink_review')) {
-    _hotlinks_reviews_create_review_field();
-    $fields_created[] = 'field_hotlink_review';
-  }
-  
-  if (!FieldConfig::loadByName('node', 'hotlink', 'field_hotlink_avg_rating')) {
-    _hotlinks_reviews_create_avg_rating_field();
-    $fields_created[] = 'field_hotlink_avg_rating';
-  }
-  
-  if (!FieldConfig::loadByName('node', 'hotlink', 'field_hotlink_review_count')) {
-    _hotlinks_reviews_create_review_count_field();
-    $fields_created[] = 'field_hotlink_review_count';
-  }
+  try {
+    // Check and create each field
+    if (!FieldConfig::loadByName('node', 'hotlink', 'field_hotlink_rating')) {
+      _hotlinks_reviews_create_rating_field();
+      $fields_created[] = 'field_hotlink_rating';
+    }
+    
+    if (!FieldConfig::loadByName('node', 'hotlink', 'field_hotlink_review')) {
+      _hotlinks_reviews_create_review_field();
+      $fields_created[] = 'field_hotlink_review';
+    }
+    
+    if (!FieldConfig::loadByName('node', 'hotlink', 'field_hotlink_avg_rating')) {
+      _hotlinks_reviews_create_avg_rating_field();
+      $fields_created[] = 'field_hotlink_avg_rating';
+    }
+    
+    if (!FieldConfig::loadByName('node', 'hotlink', 'field_hotlink_review_count')) {
+      _hotlinks_reviews_create_review_count_field();
+      $fields_created[] = 'field_hotlink_review_count';
+    }
 
-  if (!empty($fields_created)) {
+    if (!empty($fields_created)) {
+      _hotlinks_reviews_update_form_display();
+      _hotlinks_reviews_update_view_displays();
+      _hotlinks_reviews_add_config();
+      
+      return t('Created missing review fields: @fields', [
+        '@fields' => implode(', ', $fields_created)
+      ]);
+    }
+
+    return t('All review fields already exist.');
+    
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks_reviews')->error('Error in update 8001: @error', ['@error' => $e->getMessage()]);
+    return t('Error creating review fields. Check logs for details: @error', ['@error' => $e->getMessage()]);
+  }
+}
+
+/**
+ * Fix installation process and verify all components.
+ */
+function hotlinks_reviews_update_8002() {
+  try {
+    // Verify dependencies still exist
+    if (!\Drupal::moduleHandler()->moduleExists('hotlinks')) {
+      throw new \Exception('Hotlinks module not found. Cannot continue.');
+    }
+
+    $node_type = \Drupal::entityTypeManager()
+      ->getStorage('node_type')
+      ->load('hotlink');
+
+    if (!$node_type) {
+      throw new \Exception('Hotlinks content type not found. Please reinstall the main Hotlinks module.');
+    }
+
+    // Recreate all fields and displays
+    _hotlinks_reviews_create_rating_field();
+    _hotlinks_reviews_create_review_field();
+    _hotlinks_reviews_create_avg_rating_field();
+    _hotlinks_reviews_create_review_count_field();
+    
     _hotlinks_reviews_update_form_display();
     _hotlinks_reviews_update_view_displays();
     _hotlinks_reviews_add_config();
-    
-    return t('Created missing review fields: @fields', [
-      '@fields' => implode(', ', $fields_created)
-    ]);
-  }
 
-  return t('All review fields already exist.');
+    // Clear caches
+    \Drupal::entityTypeManager()->clearCachedDefinitions();
+    \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+
+    return t('Fixed Hotlinks Reviews installation and verified all components.');
+    
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks_reviews')->error('Error in update 8002: @error', ['@error' => $e->getMessage()]);
+    return t('Error fixing installation. Check logs for details: @error', ['@error' => $e->getMessage()]);
+  }
 }

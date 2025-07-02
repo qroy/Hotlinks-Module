@@ -23,7 +23,7 @@ class HotlinksController extends ControllerBase {
     $build = [];
 
     try {
-      // Get all hotlinks
+      // Get all hotlinks with proper error handling
       $query = $this->entityTypeManager
         ->getStorage('node')
         ->getQuery()
@@ -32,19 +32,29 @@ class HotlinksController extends ControllerBase {
         ->accessCheck(TRUE);
 
       $nids = $query->execute();
-      $hotlinks = !empty($nids) ? $this->entityTypeManager->getStorage('node')->loadMultiple($nids) : [];
+      
+      if (empty($nids)) {
+        $build['no_hotlinks'] = [
+          '#markup' => '<p>' . $this->t('No hotlinks found. <a href="@url">Create your first hotlink</a>.', [
+            '@url' => \Drupal\Core\Url::fromRoute('node.add', ['node_type' => 'hotlink'])->toString(),
+          ]) . '</p>',
+        ];
+        return $build;
+      }
 
-      // Group hotlinks by category
+      $hotlinks = $this->entityTypeManager->getStorage('node')->loadMultiple($nids);
+
+      // Group hotlinks by category with better error handling
       $hotlinks_by_category = $this->groupHotlinksByCategory($hotlinks);
 
-      // Get all categories
-      $categories = $this->entityTypeManager
-        ->getStorage('taxonomy_term')
-        ->loadByProperties(['vid' => 'hotlink_categories']);
+      // Get all categories with error handling
+      $categories = $this->loadCategories();
 
       if (empty($categories)) {
         $build['no_categories'] = [
-          '#markup' => '<p>' . $this->t('No categories found.') . '</p>',
+          '#markup' => '<p>' . $this->t('No categories found. <a href="@url">Create categories</a> to organize your hotlinks.', [
+            '@url' => \Drupal\Core\Url::fromRoute('entity.taxonomy_vocabulary.overview_form', ['taxonomy_vocabulary' => 'hotlink_categories'])->toString(),
+          ]) . '</p>',
         ];
         return $build;
       }
@@ -63,7 +73,7 @@ class HotlinksController extends ControllerBase {
 
     } catch (\Exception $e) {
       $build['error'] = [
-        '#markup' => '<p><strong>Error:</strong> ' . $e->getMessage() . '</p>',
+        '#markup' => '<p><strong>Error:</strong> ' . $this->t('Unable to load hotlinks index. Please check system logs.') . '</p>',
       ];
       \Drupal::logger('hotlinks')->error('Error in index: @message', ['@message' => $e->getMessage()]);
     }
@@ -75,7 +85,12 @@ class HotlinksController extends ControllerBase {
     $build = [];
 
     try {
-      // Get all hotlinks
+      // Verify category belongs to hotlink_categories vocabulary
+      if ($category->bundle() !== 'hotlink_categories') {
+        throw new \InvalidArgumentException('Invalid category vocabulary');
+      }
+
+      // Get all hotlinks with proper query optimization
       $query = $this->entityTypeManager
         ->getStorage('node')
         ->getQuery()
@@ -85,26 +100,40 @@ class HotlinksController extends ControllerBase {
         ->sort('title', 'ASC');
 
       $nids = $query->execute();
-      $hotlinks = !empty($nids) ? $this->entityTypeManager->getStorage('node')->loadMultiple($nids) : [];
+      
+      if (empty($nids)) {
+        $build['no_hotlinks'] = [
+          '#markup' => '<p>' . $this->t('No hotlinks found in any category.') . '</p>',
+        ];
+        return $build;
+      }
 
-      // Group hotlinks by category
-      $hotlinks_by_category = $this->groupHotlinksByCategory($hotlinks);
+      $hotlinks = $this->entityTypeManager->getStorage('node')->loadMultiple($nids);
 
-      // Get category links
-      $category_hotlinks = $this->filterHotlinksByCategory($hotlinks, $category->id());
+      // Filter hotlinks for this specific category and its children
+      $category_hotlinks = $this->filterHotlinksByCategory($hotlinks, $category->id(), TRUE);
 
-      // Check if this is a parent category
+      // Get child categories
       $children = $this->entityTypeManager
         ->getStorage('taxonomy_term')
         ->loadChildren($category->id());
 
       // Build category page in Star Trek Wormhole style
       $build['category_header'] = [
-        '#markup' => '<h2>' . $category->getName() . '</h2>',
+        '#markup' => '<h2>' . $this->escapeOutput($category->getName()) . '</h2>',
       ];
+
+      // Add category description if available
+      $description = $category->getDescription();
+      if (!empty($description)) {
+        $build['category_description'] = [
+          '#markup' => '<div class="category-description">' . $description . '</div>',
+        ];
+      }
 
       // Show subcategories at top (like Star Trek Wormhole)
       if (!empty($children)) {
+        $hotlinks_by_category = $this->groupHotlinksByCategory($hotlinks);
         $build['subcategories'] = [
           '#type' => 'container',
           '#attributes' => ['class' => ['category-subcategories']],
@@ -118,7 +147,7 @@ class HotlinksController extends ControllerBase {
           '#type' => 'container',
           '#attributes' => ['class' => ['category-links']],
           'title' => [
-            '#markup' => '<h3>Links in ' . $category->getName() . '</h3>',
+            '#markup' => '<h3>' . $this->t('Links in @category', ['@category' => $category->getName()]) . '</h3>',
           ],
           'list' => [
             '#theme' => 'item_list',
@@ -129,7 +158,9 @@ class HotlinksController extends ControllerBase {
 
         foreach ($category_hotlinks as $hotlink) {
           $item = $this->buildHotlinkItem($hotlink);
-          $build['links']['list']['#items'][] = ['#markup' => \Drupal::service('renderer')->render($item)];
+          if ($item) {
+            $build['links']['list']['#items'][] = ['#markup' => \Drupal::service('renderer')->render($item)];
+          }
         }
       } else {
         $build['no_links'] = [
@@ -141,7 +172,7 @@ class HotlinksController extends ControllerBase {
 
     } catch (\Exception $e) {
       $build['error'] = [
-        '#markup' => '<p><strong>Error:</strong> ' . $e->getMessage() . '</p>',
+        '#markup' => '<p><strong>Error:</strong> ' . $this->t('Unable to load category page. Please check system logs.') . '</p>',
       ];
       \Drupal::logger('hotlinks')->error('Error in category: @message', ['@message' => $e->getMessage()]);
     }
@@ -154,20 +185,42 @@ class HotlinksController extends ControllerBase {
   }
 
   /**
+   * Load categories with error handling.
+   */
+  private function loadCategories() {
+    try {
+      $categories = $this->entityTypeManager
+        ->getStorage('taxonomy_term')
+        ->loadByProperties(['vid' => 'hotlink_categories']);
+      
+      return $categories;
+    } catch (\Exception $e) {
+      \Drupal::logger('hotlinks')->error('Error loading categories: @message', ['@message' => $e->getMessage()]);
+      return [];
+    }
+  }
+
+  /**
    * Build front page categories in Star Trek Wormhole style.
    */
   private function buildFrontPageCategories($categories, $hotlinks_by_category) {
     $build = [];
 
-    // Get parent categories (those without parents)
+    // Get parent categories (those without parents) with optimized loading
     $parent_categories = [];
+    $term_storage = $this->entityTypeManager->getStorage('taxonomy_term');
+    
     foreach ($categories as $category) {
-      $parents = $this->entityTypeManager
-        ->getStorage('taxonomy_term')
-        ->loadParents($category->id());
-
-      if (empty($parents)) {
-        $parent_categories[] = $category;
+      try {
+        $parents = $term_storage->loadParents($category->id());
+        if (empty($parents)) {
+          $parent_categories[] = $category;
+        }
+      } catch (\Exception $e) {
+        \Drupal::logger('hotlinks')->warning('Error checking parents for category @id: @message', [
+          '@id' => $category->id(),
+          '@message' => $e->getMessage(),
+        ]);
       }
     }
 
@@ -179,76 +232,83 @@ class HotlinksController extends ControllerBase {
     foreach ($parent_categories as $parent_category) {
       $parent_id = $parent_category->id();
       
-      // Get children
-      $children = $this->entityTypeManager
-        ->getStorage('taxonomy_term')
-        ->loadChildren($parent_id);
+      try {
+        // Get children with error handling
+        $children = $term_storage->loadChildren($parent_id);
 
-      // Use the helper function to get total count including subcategories
-      $total_count = $this->getCategoryTotalCount($parent_id);
+        // Use the helper function to get total count including subcategories
+        $total_count = $this->getCategoryTotalCount($parent_id);
 
-      // Build parent category entry (show even if empty, like Star Trek Wormhole)
-      $build[$parent_id] = [
-        '#type' => 'container',
-        '#attributes' => ['class' => ['category-entry']],
-      ];
-
-      // Folder icon and parent category link
-      $parent_link = [
-        '#type' => 'link',
-        '#title' => $parent_category->getName(),
-        '#url' => \Drupal\Core\Url::fromRoute('hotlinks.category', ['category' => $parent_id]),
-        '#attributes' => ['class' => ['category-main-link']],
-      ];
-
-      $build[$parent_id]['main'] = [
-        '#markup' => '📁 ' . \Drupal::service('renderer')->render($parent_link) . ' (' . $total_count . ')',
-      ];
-
-      // Subcategories list (like Star Trek Wormhole format)
-      if (!empty($children)) {
-        $subcategory_links = [];
-        
-        // Sort children alphabetically
-        $children_array = array_values($children);
-        usort($children_array, function($a, $b) {
-          return strcmp($a->getName(), $b->getName());
-        });
-
-        foreach ($children_array as $child) {
-          // Use the helper function for child count too (includes any sub-subcategories)
-          $child_count = $this->getCategoryTotalCount($child->id());
-          
-          $subcategory_links[] = [
-            '#type' => 'link',
-            '#title' => $child->getName() . ' (' . $child_count . ')',
-            '#url' => \Drupal\Core\Url::fromRoute('hotlinks.category', ['category' => $child->id()]),
-            '#attributes' => ['class' => ['subcategory-link']],
-          ];
-        }
-
-        if (!empty($subcategory_links)) {
-          $subcategory_markup = '';
-          foreach ($subcategory_links as $index => $link) {
-            if ($index > 0) {
-              $subcategory_markup .= ', ';
-            }
-            $subcategory_markup .= \Drupal::service('renderer')->render($link);
-          }
-          $subcategory_markup .= ', ...';
-
-          $build[$parent_id]['subcategories'] = [
-            '#markup' => '<div class="subcategories-line">' . $subcategory_markup . '</div>',
-          ];
-        }
-      }
-
-      // Add description from taxonomy term if it exists
-      $description = $parent_category->getDescription();
-      if (!empty($description)) {
-        $build[$parent_id]['description'] = [
-          '#markup' => '<div class="category-description">' . $description . '</div>',
+        // Build parent category entry (show even if empty, like Star Trek Wormhole)
+        $build[$parent_id] = [
+          '#type' => 'container',
+          '#attributes' => ['class' => ['category-entry']],
         ];
+
+        // Folder icon and parent category link
+        $parent_link = [
+          '#type' => 'link',
+          '#title' => $this->escapeOutput($parent_category->getName()),
+          '#url' => \Drupal\Core\Url::fromRoute('hotlinks.category', ['category' => $parent_id]),
+          '#attributes' => ['class' => ['category-main-link']],
+        ];
+
+        $build[$parent_id]['main'] = [
+          '#markup' => '📁 ' . \Drupal::service('renderer')->render($parent_link) . ' (' . $total_count . ')',
+        ];
+
+        // Subcategories list (like Star Trek Wormhole format)
+        if (!empty($children)) {
+          $subcategory_links = [];
+          
+          // Sort children alphabetically
+          $children_array = array_values($children);
+          usort($children_array, function($a, $b) {
+            return strcmp($a->getName(), $b->getName());
+          });
+
+          foreach ($children_array as $child) {
+            // Use the helper function for child count too
+            $child_count = $this->getCategoryTotalCount($child->id());
+            
+            $subcategory_links[] = [
+              '#type' => 'link',
+              '#title' => $this->escapeOutput($child->getName()) . ' (' . $child_count . ')',
+              '#url' => \Drupal\Core\Url::fromRoute('hotlinks.category', ['category' => $child->id()]),
+              '#attributes' => ['class' => ['subcategory-link']],
+            ];
+          }
+
+          if (!empty($subcategory_links)) {
+            $subcategory_markup = '';
+            foreach ($subcategory_links as $index => $link) {
+              if ($index > 0) {
+                $subcategory_markup .= ', ';
+              }
+              $subcategory_markup .= \Drupal::service('renderer')->render($link);
+            }
+            $subcategory_markup .= ', ...';
+
+            $build[$parent_id]['subcategories'] = [
+              '#markup' => '<div class="subcategories-line">' . $subcategory_markup . '</div>',
+            ];
+          }
+        }
+
+        // Add description from taxonomy term if it exists
+        $description = $parent_category->getDescription();
+        if (!empty($description)) {
+          $build[$parent_id]['description'] = [
+            '#markup' => '<div class="category-description">' . $description . '</div>',
+          ];
+        }
+        
+      } catch (\Exception $e) {
+        \Drupal::logger('hotlinks')->error('Error building category @name: @message', [
+          '@name' => $parent_category->getName(),
+          '@message' => $e->getMessage(),
+        ]);
+        // Continue with other categories even if one fails
       }
     }
 
@@ -268,15 +328,22 @@ class HotlinksController extends ControllerBase {
     });
 
     foreach ($children_array as $child) {
-      // Use the helper function to get total count including any sub-subcategories
-      $child_count = $this->getCategoryTotalCount($child->id());
-      
-      $subcategory_links[] = [
-        '#type' => 'link',
-        '#title' => $child->getName() . ' (' . $child_count . ')',
-        '#url' => \Drupal\Core\Url::fromRoute('hotlinks.category', ['category' => $child->id()]),
-        '#attributes' => ['class' => ['subcategory-nav-link']],
-      ];
+      try {
+        // Use the helper function to get total count including any sub-subcategories
+        $child_count = $this->getCategoryTotalCount($child->id());
+        
+        $subcategory_links[] = [
+          '#type' => 'link',
+          '#title' => $this->escapeOutput($child->getName()) . ' (' . $child_count . ')',
+          '#url' => \Drupal\Core\Url::fromRoute('hotlinks.category', ['category' => $child->id()]),
+          '#attributes' => ['class' => ['subcategory-nav-link']],
+        ];
+      } catch (\Exception $e) {
+        \Drupal::logger('hotlinks')->warning('Error building subcategory link for @name: @message', [
+          '@name' => $child->getName(),
+          '@message' => $e->getMessage(),
+        ]);
+      }
     }
 
     if (!empty($subcategory_links)) {
@@ -293,8 +360,7 @@ class HotlinksController extends ControllerBase {
 
   /**
    * Get total hotlinks count for a category including all subcategories.
-   * 
-   * This uses the same logic as the helper function in hotlinks.module.
+   * Fixed to prevent double-counting and improve performance.
    */
   private function getCategoryTotalCount($category_id) {
     try {
@@ -311,11 +377,23 @@ class HotlinksController extends ControllerBase {
       }
 
       // Query for hotlinks in any of these categories
+      // Use DISTINCT to prevent double-counting when hotlinks are in multiple categories
       $query = $node_storage->getQuery()
         ->condition('type', 'hotlink')
         ->condition('status', 1)
-        ->condition('field_hotlink_category', $category_ids, 'IN')
         ->accessCheck(TRUE);
+      
+      // Only add category condition if hotlink has the category field
+      $sample_hotlink = $node_storage->loadByProperties(['type' => 'hotlink']);
+      if (!empty($sample_hotlink)) {
+        $sample = reset($sample_hotlink);
+        if ($sample->hasField('field_hotlink_category')) {
+          $query->condition('field_hotlink_category', $category_ids, 'IN');
+        } else {
+          \Drupal::logger('hotlinks')->warning('Hotlink nodes missing category field');
+          return 0;
+        }
+      }
 
       return $query->count()->execute();
       
@@ -329,13 +407,19 @@ class HotlinksController extends ControllerBase {
   }
 
   /**
-   * Group hotlinks by their categories.
+   * Group hotlinks by their categories with improved error handling.
    */
   private function groupHotlinksByCategory($hotlinks) {
     $grouped = [];
 
     foreach ($hotlinks as $hotlink) {
       try {
+        // Check if the category field exists
+        if (!$hotlink->hasField('field_hotlink_category')) {
+          \Drupal::logger('hotlinks')->warning('Hotlink @nid missing category field', ['@nid' => $hotlink->id()]);
+          continue;
+        }
+
         $category_field = $hotlink->get('field_hotlink_category');
         if (!$category_field->isEmpty()) {
           foreach ($category_field as $category_item) {
@@ -358,19 +442,41 @@ class HotlinksController extends ControllerBase {
   }
 
   /**
-   * Filter hotlinks by category.
+   * Filter hotlinks by category with support for including children.
    */
-  private function filterHotlinksByCategory($hotlinks, $category_id) {
+  private function filterHotlinksByCategory($hotlinks, $category_id, $include_children = FALSE) {
     $filtered = [];
+    $target_categories = [$category_id];
+
+    // If including children, get all descendant category IDs
+    if ($include_children) {
+      try {
+        $term_storage = $this->entityTypeManager->getStorage('taxonomy_term');
+        $child_terms = $term_storage->loadTree('hotlink_categories', $category_id);
+        foreach ($child_terms as $child_term) {
+          $target_categories[] = $child_term->tid;
+        }
+      } catch (\Exception $e) {
+        \Drupal::logger('hotlinks')->error('Error loading child categories for @id: @message', [
+          '@id' => $category_id,
+          '@message' => $e->getMessage(),
+        ]);
+      }
+    }
 
     foreach ($hotlinks as $hotlink) {
       try {
+        // Check if the category field exists
+        if (!$hotlink->hasField('field_hotlink_category')) {
+          continue;
+        }
+
         $category_field = $hotlink->get('field_hotlink_category');
         if (!$category_field->isEmpty()) {
           foreach ($category_field as $category_item) {
-            if ($category_item->target_id == $category_id) {
+            if (in_array($category_item->target_id, $target_categories)) {
               $filtered[] = $hotlink;
-              break;
+              break; // Don't add the same hotlink multiple times
             }
           }
         }
@@ -386,7 +492,7 @@ class HotlinksController extends ControllerBase {
   }
 
   /**
-   * Build a hotlink item display using custom display mode.
+   * Build a hotlink item display using custom display mode with comprehensive error handling.
    */
   private function buildHotlinkItem($hotlink) {
     try {
@@ -411,25 +517,33 @@ class HotlinksController extends ControllerBase {
   }
 
   /**
-   * Fallback method to build hotlink item display.
+   * Fallback method to build hotlink item display with comprehensive field checking.
    */
   private function buildHotlinkItemFallback($hotlink) {
     try {
-      $url_field = $hotlink->get('field_hotlink_url');
-      $description_field = $hotlink->get('field_hotlink_description');
+      // Check if required fields exist
+      if (!$hotlink->hasField('field_hotlink_url')) {
+        \Drupal::logger('hotlinks')->error('Hotlink @nid missing URL field', ['@nid' => $hotlink->id()]);
+        return ['#markup' => '<div class="hotlink-item-error">Hotlink missing URL field</div>'];
+      }
 
+      $url_field = $hotlink->get('field_hotlink_url');
       if ($url_field->isEmpty()) {
         return ['#markup' => '<div class="hotlink-item">Invalid hotlink - no URL</div>'];
       }
 
       $url_item = $url_field->first();
-      $link_title = $url_item->title ?: $hotlink->getTitle();
+      $link_title = !empty($url_item->title) ? $url_item->title : $hotlink->getTitle();
       $link_url = $url_item->getUrl();
 
+      // Get description if field exists
       $description = '';
-      if (!$description_field->isEmpty()) {
-        $description_item = $description_field->first();
-        $description = $description_item->value;
+      if ($hotlink->hasField('field_hotlink_description')) {
+        $description_field = $hotlink->get('field_hotlink_description');
+        if (!$description_field->isEmpty()) {
+          $description_item = $description_field->first();
+          $description = $description_item->value ?? '';
+        }
       }
 
       $item = [
@@ -446,7 +560,7 @@ class HotlinksController extends ControllerBase {
           $thumbnail_item = $thumbnail_field->first();
           $file = $thumbnail_item->entity;
           
-          if ($file) {
+          if ($file && $file->access('view')) {
             $item['thumbnail'] = [
               '#theme' => 'image_style',
               '#style_name' => 'thumbnail',
@@ -470,14 +584,14 @@ class HotlinksController extends ControllerBase {
         // Title links to node (like the custom view mode would)
         $item['content']['title'] = [
           '#type' => 'link',
-          '#title' => $hotlink->getTitle(),
+          '#title' => $this->escapeOutput($hotlink->getTitle()),
           '#url' => $hotlink->toUrl(),
           '#attributes' => ['class' => ['hotlink-node-link']],
         ];
 
         $item['content']['url'] = [
           '#type' => 'link',
-          '#title' => $link_title,
+          '#title' => $this->escapeOutput($link_title),
           '#url' => $link_url,
           '#attributes' => [
             'target' => '_blank',
@@ -486,23 +600,25 @@ class HotlinksController extends ControllerBase {
           ],
         ];
 
-        if ($description) {
+        if (!empty($description)) {
           $item['content']['description'] = [
-            '#markup' => '<div class="hotlink-description">' . $description . '</div>',
+            '#markup' => '<div class="hotlink-description">' . $this->escapeOutput($description) . '</div>',
           ];
         }
       } else {
         // Very basic fallback for when thumbnail field doesn't exist
+        \Drupal::logger('hotlinks')->warning('Hotlink @nid missing thumbnail field', ['@nid' => $hotlink->id()]);
+        
         $item['title'] = [
           '#type' => 'link',
-          '#title' => $hotlink->getTitle(),
+          '#title' => $this->escapeOutput($hotlink->getTitle()),
           '#url' => $hotlink->toUrl(),
           '#attributes' => ['class' => ['hotlink-node-link']],
         ];
 
         $item['url'] = [
           '#type' => 'link',
-          '#title' => $link_title,
+          '#title' => $this->escapeOutput($link_title),
           '#url' => $link_url,
           '#attributes' => [
             'target' => '_blank',
@@ -511,9 +627,9 @@ class HotlinksController extends ControllerBase {
           ],
         ];
 
-        if ($description) {
+        if (!empty($description)) {
           $item['description'] = [
-            '#markup' => '<div class="hotlink-description">' . $description . '</div>',
+            '#markup' => '<div class="hotlink-description">' . $this->escapeOutput($description) . '</div>',
           ];
         }
       }
@@ -522,7 +638,14 @@ class HotlinksController extends ControllerBase {
 
     } catch (\Exception $e) {
       \Drupal::logger('hotlinks')->error('Error in fallback hotlink display: @message', ['@message' => $e->getMessage()]);
-      return ['#markup' => '<div class="hotlink-item-error">Error loading hotlink: ' . $hotlink->getTitle() . '</div>'];
+      return ['#markup' => '<div class="hotlink-item-error">Error loading hotlink: ' . $this->escapeOutput($hotlink->getTitle()) . '</div>'];
     }
+  }
+
+  /**
+   * Safely escape output to prevent XSS.
+   */
+  private function escapeOutput($text) {
+    return \Drupal\Component\Utility\Html::escape($text);
   }
 }

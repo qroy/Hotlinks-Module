@@ -27,7 +27,37 @@ function hotlinks_install() {
   \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
 
   try {
-    // Create vocabulary
+    // Install in proper order with error checking
+    _hotlinks_create_vocabulary();
+    _hotlinks_create_content_type();
+    _hotlinks_create_fields();
+    _hotlinks_create_view_mode();
+    _hotlinks_configure_displays();
+    _hotlinks_set_default_config();
+
+    // Final cache clear
+    \Drupal::entityTypeManager()->clearCachedDefinitions();
+    \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+    \Drupal::service('entity_display.repository')->clearDisplayModeInfo();
+
+    \Drupal::messenger()->addMessage(t('Hotlinks module installed successfully! You can now create categories and add hotlinks.'));
+
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks')->error('Error during installation: @message', ['@message' => $e->getMessage()]);
+    throw $e;
+  }
+}
+
+/**
+ * Create the hotlink categories vocabulary.
+ */
+function _hotlinks_create_vocabulary() {
+  // Check if vocabulary already exists
+  $vocabulary = \Drupal::entityTypeManager()
+    ->getStorage('taxonomy_vocabulary')
+    ->load('hotlink_categories');
+
+  if (!$vocabulary) {
     $vocabulary = Vocabulary::create([
       'vid' => 'hotlink_categories',
       'name' => 'Hotlink Categories',
@@ -35,10 +65,22 @@ function hotlinks_install() {
       'hierarchy' => 1,
     ]);
     $vocabulary->save();
+    \Drupal::logger('hotlinks')->info('Created hotlink_categories vocabulary');
+  } else {
+    \Drupal::logger('hotlinks')->info('Hotlink categories vocabulary already exists');
+  }
+}
 
-    // Don't create any default categories - let users add their own or use submodules
+/**
+ * Create the hotlink content type.
+ */
+function _hotlinks_create_content_type() {
+  // Check if content type already exists
+  $node_type = \Drupal::entityTypeManager()
+    ->getStorage('node_type')
+    ->load('hotlink');
 
-    // Create content type
+  if (!$node_type) {
     $node_type = NodeType::create([
       'type' => 'hotlink',
       'name' => 'Hotlink',
@@ -49,8 +91,30 @@ function hotlinks_install() {
       'display_submitted' => FALSE,
     ]);
     $node_type->save();
+    \Drupal::logger('hotlinks')->info('Created hotlink content type');
+  } else {
+    \Drupal::logger('hotlinks')->info('Hotlink content type already exists');
+  }
+}
 
-    // Create URL field
+/**
+ * Create all required fields for the hotlink content type.
+ */
+function _hotlinks_create_fields() {
+  // Create fields in order of dependency
+  _hotlinks_create_url_field();
+  _hotlinks_create_category_field();
+  _hotlinks_create_description_field();
+  _hotlinks_create_thumbnail_field();
+}
+
+/**
+ * Create URL field.
+ */
+function _hotlinks_create_url_field() {
+  // Check if field storage exists
+  $field_storage = FieldStorageConfig::loadByName('node', 'field_hotlink_url');
+  if (!$field_storage) {
     $field_storage = FieldStorageConfig::create([
       'field_name' => 'field_hotlink_url',
       'entity_type' => 'node',
@@ -58,7 +122,12 @@ function hotlinks_install() {
       'cardinality' => 1,
     ]);
     $field_storage->save();
+    \Drupal::logger('hotlinks')->info('Created field_hotlink_url storage');
+  }
 
+  // Check if field config exists
+  $field_config = FieldConfig::loadByName('node', 'hotlink', 'field_hotlink_url');
+  if (!$field_config) {
     $field_config = FieldConfig::create([
       'field_storage' => $field_storage,
       'bundle' => 'hotlink',
@@ -71,8 +140,26 @@ function hotlinks_install() {
       ],
     ]);
     $field_config->save();
+    \Drupal::logger('hotlinks')->info('Created field_hotlink_url config');
+  }
+}
 
-    // Create category field
+/**
+ * Create category field.
+ */
+function _hotlinks_create_category_field() {
+  // Verify vocabulary exists first
+  $vocabulary = \Drupal::entityTypeManager()
+    ->getStorage('taxonomy_vocabulary')
+    ->load('hotlink_categories');
+  
+  if (!$vocabulary) {
+    throw new \Exception('Hotlink categories vocabulary not found. Cannot create category field.');
+  }
+
+  // Check if field storage exists
+  $field_storage = FieldStorageConfig::loadByName('node', 'field_hotlink_category');
+  if (!$field_storage) {
     $field_storage = FieldStorageConfig::create([
       'field_name' => 'field_hotlink_category',
       'entity_type' => 'node',
@@ -83,7 +170,12 @@ function hotlinks_install() {
       ],
     ]);
     $field_storage->save();
+    \Drupal::logger('hotlinks')->info('Created field_hotlink_category storage');
+  }
 
+  // Check if field config exists
+  $field_config = FieldConfig::loadByName('node', 'hotlink', 'field_hotlink_category');
+  if (!$field_config) {
     $field_config = FieldConfig::create([
       'field_storage' => $field_storage,
       'bundle' => 'hotlink',
@@ -101,8 +193,17 @@ function hotlinks_install() {
       ],
     ]);
     $field_config->save();
+    \Drupal::logger('hotlinks')->info('Created field_hotlink_category config');
+  }
+}
 
-    // Create description field
+/**
+ * Create description field.
+ */
+function _hotlinks_create_description_field() {
+  // Check if field storage exists
+  $field_storage = FieldStorageConfig::loadByName('node', 'field_hotlink_description');
+  if (!$field_storage) {
     $field_storage = FieldStorageConfig::create([
       'field_name' => 'field_hotlink_description',
       'entity_type' => 'node',
@@ -110,7 +211,12 @@ function hotlinks_install() {
       'cardinality' => 1,
     ]);
     $field_storage->save();
+    \Drupal::logger('hotlinks')->info('Created field_hotlink_description storage');
+  }
 
+  // Check if field config exists
+  $field_config = FieldConfig::loadByName('node', 'hotlink', 'field_hotlink_description');
+  if (!$field_config) {
     $field_config = FieldConfig::create([
       'field_storage' => $field_storage,
       'bundle' => 'hotlink',
@@ -119,8 +225,17 @@ function hotlinks_install() {
       'required' => FALSE,
     ]);
     $field_config->save();
+    \Drupal::logger('hotlinks')->info('Created field_hotlink_description config');
+  }
+}
 
-    // Create thumbnail field
+/**
+ * Create thumbnail field.
+ */
+function _hotlinks_create_thumbnail_field() {
+  // Check if field storage exists
+  $field_storage = FieldStorageConfig::loadByName('node', 'field_hotlink_thumbnail');
+  if (!$field_storage) {
     $field_storage = FieldStorageConfig::create([
       'field_name' => 'field_hotlink_thumbnail',
       'entity_type' => 'node',
@@ -141,7 +256,12 @@ function hotlinks_install() {
       ],
     ]);
     $field_storage->save();
+    \Drupal::logger('hotlinks')->info('Created field_hotlink_thumbnail storage');
+  }
 
+  // Check if field config exists
+  $field_config = FieldConfig::loadByName('node', 'hotlink', 'field_hotlink_thumbnail');
+  if (!$field_config) {
     $field_config = FieldConfig::create([
       'field_storage' => $field_storage,
       'bundle' => 'hotlink',
@@ -168,8 +288,20 @@ function hotlinks_install() {
       ],
     ]);
     $field_config->save();
+    \Drupal::logger('hotlinks')->info('Created field_hotlink_thumbnail config');
+  }
+}
 
-    // Create the 'hotlinks_index' view mode
+/**
+ * Create the hotlinks_index view mode.
+ */
+function _hotlinks_create_view_mode() {
+  // Check if view mode already exists
+  $view_mode = \Drupal::entityTypeManager()
+    ->getStorage('entity_view_mode')
+    ->load('node.hotlinks_index');
+    
+  if (!$view_mode) {
     $view_mode = EntityViewMode::create([
       'id' => 'node.hotlinks_index',
       'label' => 'Hotlinks Index',
@@ -178,193 +310,252 @@ function hotlinks_install() {
       'enabled' => TRUE,
     ]);
     $view_mode->save();
+    \Drupal::logger('hotlinks')->info('Created hotlinks_index view mode');
+  } else {
+    // Ensure it's enabled
+    $view_mode->setStatus(TRUE);
+    $view_mode->save();
+    \Drupal::logger('hotlinks')->info('Hotlinks_index view mode already exists and is enabled');
+  }
+}
 
-    // Configure form display
-    $form_display = EntityFormDisplay::load('node.hotlink.default');
-    if (!$form_display) {
-      $form_display = EntityFormDisplay::create([
-        'targetEntityType' => 'node',
-        'bundle' => 'hotlink',
-        'mode' => 'default',
-        'status' => TRUE,
-      ]);
-    }
+/**
+ * Configure form and view displays.
+ */
+function _hotlinks_configure_displays() {
+  // Configure form display
+  _hotlinks_configure_form_display();
+  
+  // Configure default view display
+  _hotlinks_configure_default_view_display();
+  
+  // Configure hotlinks_index view display
+  _hotlinks_configure_index_view_display();
+}
 
-    $form_display
-      ->setComponent('title', [
-        'type' => 'string_textfield',
-        'weight' => 0,
-        'settings' => [
-          'size' => 60,
-          'placeholder' => 'Leave empty to auto-generate from URL',
-        ],
-      ])
-      ->setComponent('field_hotlink_url', [
-        'type' => 'link_default',
-        'weight' => 1,
-        'settings' => [
-          'placeholder_url' => 'https://example.com',
-          'placeholder_title' => 'Optional link title',
-        ],
-      ])
-      ->setComponent('field_hotlink_category', [
-        'type' => 'entity_reference_autocomplete_tags',
-        'weight' => 2,
-        'settings' => [
-          'match_operator' => 'CONTAINS',
-          'size' => 60,
-          'placeholder' => 'Start typing to find categories...',
-        ],
-      ])
-      ->setComponent('field_hotlink_description', [
-        'type' => 'text_textarea',
-        'weight' => 3,
-        'settings' => [
-          'rows' => 4,
-          'placeholder' => 'Optional description of the link',
-        ],
-      ])
-      ->setComponent('field_hotlink_thumbnail', [
-        'type' => 'image_image',
-        'weight' => 4,
-        'settings' => [
-          'progress_indicator' => 'throbber',
-          'preview_image_style' => 'thumbnail',
-        ],
-      ])
-      ->removeComponent('body')
-      ->removeComponent('uid')
-      ->removeComponent('created')
-      ->removeComponent('promote')
-      ->removeComponent('sticky')
-      ->save();
+/**
+ * Configure form display.
+ */
+function _hotlinks_configure_form_display() {
+  $form_display = EntityFormDisplay::load('node.hotlink.default');
+  if (!$form_display) {
+    $form_display = EntityFormDisplay::create([
+      'targetEntityType' => 'node',
+      'bundle' => 'hotlink',
+      'mode' => 'default',
+      'status' => TRUE,
+    ]);
+  }
 
-    // Configure default view display
-    $view_display = EntityViewDisplay::load('node.hotlink.default');
-    if (!$view_display) {
-      $view_display = EntityViewDisplay::create([
-        'targetEntityType' => 'node',
-        'bundle' => 'hotlink',
-        'mode' => 'default',
-        'status' => TRUE,
-      ]);
-    }
+  $form_display
+    ->setComponent('title', [
+      'type' => 'string_textfield',
+      'weight' => 0,
+      'settings' => [
+        'size' => 60,
+        'placeholder' => 'Leave empty to auto-generate from URL',
+      ],
+    ])
+    ->setComponent('field_hotlink_url', [
+      'type' => 'link_default',
+      'weight' => 1,
+      'settings' => [
+        'placeholder_url' => 'https://example.com',
+        'placeholder_title' => 'Optional link title',
+      ],
+    ])
+    ->setComponent('field_hotlink_category', [
+      'type' => 'entity_reference_autocomplete_tags',
+      'weight' => 2,
+      'settings' => [
+        'match_operator' => 'CONTAINS',
+        'size' => 60,
+        'placeholder' => 'Start typing to find categories...',
+      ],
+    ])
+    ->setComponent('field_hotlink_description', [
+      'type' => 'text_textarea',
+      'weight' => 3,
+      'settings' => [
+        'rows' => 4,
+        'placeholder' => 'Optional description of the link',
+      ],
+    ])
+    ->setComponent('field_hotlink_thumbnail', [
+      'type' => 'image_image',
+      'weight' => 4,
+      'settings' => [
+        'progress_indicator' => 'throbber',
+        'preview_image_style' => 'thumbnail',
+      ],
+    ])
+    ->removeComponent('body')
+    ->removeComponent('uid')
+    ->removeComponent('created')
+    ->removeComponent('promote')
+    ->removeComponent('sticky')
+    ->save();
 
-    $view_display
-      ->setComponent('field_hotlink_thumbnail', [
-        'type' => 'image',
-        'label' => 'hidden',
-        'weight' => 0,
-        'settings' => [
-          'image_style' => 'large',
-          'image_link' => '',
-        ],
-      ])
-      ->setComponent('field_hotlink_url', [
-        'type' => 'link',
-        'label' => 'hidden',
-        'weight' => 1,
-        'settings' => [
-          'trim_length' => 80,
-          'url_only' => FALSE,
-          'url_plain' => FALSE,
-          'rel' => 'noopener noreferrer',
-          'target' => '_blank',
-        ],
-      ])
-      ->setComponent('field_hotlink_category', [
-        'type' => 'entity_reference_label',
-        'label' => 'inline',
-        'weight' => 2,
-        'settings' => [
-          'link' => TRUE,
-        ],
-      ])
-      ->setComponent('field_hotlink_description', [
-        'type' => 'text_default',
-        'label' => 'hidden',
-        'weight' => 3,
-      ])
-      ->removeComponent('body')
-      ->removeComponent('links')
-      ->save();
+  \Drupal::logger('hotlinks')->info('Configured form display');
+}
 
-    // Configure hotlinks_index view display
+/**
+ * Configure default view display.
+ */
+function _hotlinks_configure_default_view_display() {
+  $view_display = EntityViewDisplay::load('node.hotlink.default');
+  if (!$view_display) {
+    $view_display = EntityViewDisplay::create([
+      'targetEntityType' => 'node',
+      'bundle' => 'hotlink',
+      'mode' => 'default',
+      'status' => TRUE,
+    ]);
+  }
+
+  $view_display
+    ->setComponent('field_hotlink_thumbnail', [
+      'type' => 'image',
+      'label' => 'hidden',
+      'weight' => 0,
+      'settings' => [
+        'image_style' => 'large',
+        'image_link' => '',
+      ],
+    ])
+    ->setComponent('field_hotlink_url', [
+      'type' => 'link',
+      'label' => 'hidden',
+      'weight' => 1,
+      'settings' => [
+        'trim_length' => 80,
+        'url_only' => FALSE,
+        'url_plain' => FALSE,
+        'rel' => 'noopener noreferrer',
+        'target' => '_blank',
+      ],
+    ])
+    ->setComponent('field_hotlink_category', [
+      'type' => 'entity_reference_label',
+      'label' => 'inline',
+      'weight' => 2,
+      'settings' => [
+        'link' => TRUE,
+      ],
+    ])
+    ->setComponent('field_hotlink_description', [
+      'type' => 'text_default',
+      'label' => 'hidden',
+      'weight' => 3,
+    ])
+    ->removeComponent('body')
+    ->removeComponent('links')
+    ->save();
+
+  \Drupal::logger('hotlinks')->info('Configured default view display');
+}
+
+/**
+ * Configure hotlinks_index view display.
+ */
+function _hotlinks_configure_index_view_display() {
+  // First verify the view mode exists
+  $view_mode = \Drupal::entityTypeManager()
+    ->getStorage('entity_view_mode')
+    ->load('node.hotlinks_index');
+    
+  if (!$view_mode) {
+    throw new \Exception('Hotlinks_index view mode not found. Cannot configure display.');
+  }
+
+  $index_view_display = EntityViewDisplay::load('node.hotlink.hotlinks_index');
+  if (!$index_view_display) {
     $index_view_display = EntityViewDisplay::create([
       'targetEntityType' => 'node',
       'bundle' => 'hotlink',
       'mode' => 'hotlinks_index',
       'status' => TRUE,
     ]);
-
-    $index_view_display
-      ->setComponent('title', [
-        'type' => 'string',
-        'label' => 'hidden',
-        'weight' => 0,
-        'settings' => [
-          'link_to_entity' => TRUE,
-        ],
-      ])
-      ->setComponent('field_hotlink_thumbnail', [
-        'type' => 'image',
-        'label' => 'hidden',
-        'weight' => 1,
-        'settings' => [
-          'image_style' => 'thumbnail',
-          'image_link' => 'content',
-        ],
-      ])
-      ->setComponent('field_hotlink_url', [
-        'type' => 'link',
-        'label' => 'hidden',
-        'weight' => 2,
-        'settings' => [
-          'trim_length' => 80,
-          'url_only' => FALSE,
-          'url_plain' => FALSE,
-          'rel' => 'noopener noreferrer',
-          'target' => '_blank',
-        ],
-      ])
-      ->setComponent('field_hotlink_category', [
-        'type' => 'entity_reference_label',
-        'label' => 'inline',
-        'weight' => 3,
-        'settings' => [
-          'link' => TRUE,
-        ],
-      ])
-      ->setComponent('field_hotlink_description', [
-        'type' => 'text_default',
-        'label' => 'hidden',
-        'weight' => 4,
-      ])
-      ->removeComponent('body')
-      ->removeComponent('links')
-      ->save();
-
-    // Set default configuration
-    \Drupal::configFactory()->getEditable('hotlinks.settings')
-      ->set('show_descriptions', TRUE)
-      ->set('open_in_new_window', TRUE)
-      ->set('show_category_counts', TRUE)
-      ->set('auto_thumbnail_service', 'thum_io')
-      ->set('screenshotapi_key', '')
-      ->set('htmlcsstoimage_key', '')
-      ->save();
-
-    // Clear caches after installation
-    \Drupal::entityTypeManager()->clearCachedDefinitions();
-    \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
-    \Drupal::service('entity_display.repository')->clearDisplayModeInfo();
-
-    \Drupal::messenger()->addMessage(t('Hotlinks module installed successfully! You can now create categories and add hotlinks. Consider enabling the "Hotlinks Star Trek Categories" submodule for pre-built Star Trek categories.'));
-
-  } catch (\Exception $e) {
-    \Drupal::logger('hotlinks')->error('Error during installation: @message', ['@message' => $e->getMessage()]);
-    throw $e;
   }
+
+  $index_view_display
+    ->setComponent('title', [
+      'type' => 'string',
+      'label' => 'hidden',
+      'weight' => 0,
+      'settings' => [
+        'link_to_entity' => TRUE,
+      ],
+    ])
+    ->setComponent('field_hotlink_thumbnail', [
+      'type' => 'image',
+      'label' => 'hidden',
+      'weight' => 1,
+      'settings' => [
+        'image_style' => 'thumbnail',
+        'image_link' => 'content',
+      ],
+    ])
+    ->setComponent('field_hotlink_url', [
+      'type' => 'link',
+      'label' => 'hidden',
+      'weight' => 2,
+      'settings' => [
+        'trim_length' => 80,
+        'url_only' => FALSE,
+        'url_plain' => FALSE,
+        'rel' => 'noopener noreferrer',
+        'target' => '_blank',
+      ],
+    ])
+    ->setComponent('field_hotlink_category', [
+      'type' => 'entity_reference_label',
+      'label' => 'inline',
+      'weight' => 3,
+      'settings' => [
+        'link' => TRUE,
+      ],
+    ])
+    ->setComponent('field_hotlink_description', [
+      'type' => 'text_default',
+      'label' => 'hidden',
+      'weight' => 4,
+    ])
+    ->removeComponent('body')
+    ->removeComponent('links')
+    ->save();
+
+  \Drupal::logger('hotlinks')->info('Configured hotlinks_index view display');
+}
+
+/**
+ * Set default configuration.
+ */
+function _hotlinks_set_default_config() {
+  $config = \Drupal::configFactory()->getEditable('hotlinks.settings');
+  
+  // Only set values if they don't already exist
+  if ($config->get('show_descriptions') === NULL) {
+    $config->set('show_descriptions', TRUE);
+  }
+  if ($config->get('open_in_new_window') === NULL) {
+    $config->set('open_in_new_window', TRUE);
+  }
+  if ($config->get('show_category_counts') === NULL) {
+    $config->set('show_category_counts', TRUE);
+  }
+  if ($config->get('auto_thumbnail_service') === NULL) {
+    $config->set('auto_thumbnail_service', 'thum_io');
+  }
+  if ($config->get('screenshotapi_key') === NULL) {
+    $config->set('screenshotapi_key', '');
+  }
+  if ($config->get('htmlcsstoimage_key') === NULL) {
+    $config->set('htmlcsstoimage_key', '');
+  }
+  
+  $config->save();
+  \Drupal::logger('hotlinks')->info('Set default configuration');
 }
 
 /**
@@ -382,28 +573,33 @@ function hotlinks_uninstall() {
     foreach ($nodes as $node) {
       $node->delete();
     }
+    \Drupal::logger('hotlinks')->info('Deleted @count hotlink nodes', ['@count' => count($nodes)]);
   }
 
   // Delete the content type
   $node_type = \Drupal::entityTypeManager()->getStorage('node_type')->load('hotlink');
   if ($node_type) {
     $node_type->delete();
+    \Drupal::logger('hotlinks')->info('Deleted hotlink content type');
   }
 
   // Delete the view mode
   $view_mode = \Drupal::entityTypeManager()->getStorage('entity_view_mode')->load('node.hotlinks_index');
   if ($view_mode) {
     $view_mode->delete();
+    \Drupal::logger('hotlinks')->info('Deleted hotlinks_index view mode');
   }
 
   // Delete the vocabulary and its terms
   $vocabulary = \Drupal::entityTypeManager()->getStorage('taxonomy_vocabulary')->load('hotlink_categories');
   if ($vocabulary) {
     $vocabulary->delete();
+    \Drupal::logger('hotlinks')->info('Deleted hotlink_categories vocabulary');
   }
 
   // Delete configuration
   \Drupal::configFactory()->getEditable('hotlinks.settings')->delete();
+  \Drupal::logger('hotlinks')->info('Deleted hotlinks configuration');
 }
 
 /**
@@ -451,215 +647,55 @@ function hotlinks_update_8002() {
  * Add thumbnail field to hotlinks.
  */
 function hotlinks_update_8003() {
-  // Check if field already exists
-  $field_storage = \Drupal::entityTypeManager()
-    ->getStorage('field_storage_config')
-    ->load('node.field_hotlink_thumbnail');
+  // Use the centralized field creation function
+  try {
+    _hotlinks_create_thumbnail_field();
     
-  if ($field_storage) {
-    return t('Thumbnail field already exists.');
+    // Update form display
+    _hotlinks_configure_form_display();
+    
+    // Update view displays
+    _hotlinks_configure_default_view_display();
+    _hotlinks_configure_index_view_display();
+    
+    return t('Thumbnail field added to hotlinks.');
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks')->error('Error adding thumbnail field: @message', ['@message' => $e->getMessage()]);
+    return t('Error adding thumbnail field. Check logs for details.');
   }
-
-  // Create thumbnail field storage
-  $field_storage = FieldStorageConfig::create([
-    'field_name' => 'field_hotlink_thumbnail',
-    'entity_type' => 'node',
-    'type' => 'image',
-    'cardinality' => 1,
-    'settings' => [
-      'default_image' => [
-        'uuid' => '',
-        'alt' => '',
-        'title' => '',
-        'width' => '',
-        'height' => '',
-      ],
-      'target_type' => 'file',
-      'display_field' => FALSE,
-      'display_default' => FALSE,
-      'uri_scheme' => 'public',
-    ],
-  ]);
-  $field_storage->save();
-
-  // Create thumbnail field config
-  $field_config = FieldConfig::create([
-    'field_storage' => $field_storage,
-    'bundle' => 'hotlink',
-    'label' => 'Thumbnail',
-    'description' => 'Upload a thumbnail image for this link (optional)',
-    'required' => FALSE,
-    'settings' => [
-      'file_directory' => 'hotlinks/thumbnails',
-      'file_extensions' => 'png gif jpg jpeg',
-      'max_filesize' => '2 MB',
-      'max_resolution' => '800x600',
-      'min_resolution' => '50x50',
-      'alt_field' => TRUE,
-      'alt_field_required' => FALSE,
-      'title_field' => FALSE,
-      'title_field_required' => FALSE,
-      'default_image' => [
-        'uuid' => '',
-        'alt' => '',
-        'title' => '',
-        'width' => '',
-        'height' => '',
-      ],
-    ],
-  ]);
-  $field_config->save();
-
-  // Update form display
-  $form_display = EntityFormDisplay::load('node.hotlink.default');
-  if ($form_display) {
-    $form_display->setComponent('field_hotlink_thumbnail', [
-      'type' => 'image_image',
-      'weight' => 4,
-      'settings' => [
-        'progress_indicator' => 'throbber',
-        'preview_image_style' => 'thumbnail',
-      ],
-    ])->save();
-  }
-
-  // Update view display
-  $view_display = EntityViewDisplay::load('node.hotlink.default');
-  if ($view_display) {
-    $view_display->setComponent('field_hotlink_thumbnail', [
-      'type' => 'image',
-      'label' => 'hidden',
-      'weight' => 0,
-      'settings' => [
-        'image_style' => 'thumbnail',
-        'image_link' => '',
-      ],
-    ])->save();
-  }
-
-  return t('Thumbnail field added to hotlinks.');
 }
 
 /**
  * Create custom display mode for hotlinks.
  */
 function hotlinks_update_8004() {
-  // Check if view mode already exists
-  $view_mode = \Drupal::entityTypeManager()
-    ->getStorage('entity_view_mode')
-    ->load('node.hotlinks_index');
+  try {
+    _hotlinks_create_view_mode();
+    _hotlinks_configure_index_view_display();
     
-  if ($view_mode) {
-    return t('Hotlinks Index view mode already exists.');
+    return t('Created "Hotlinks Index" display mode for hotlinks.');
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks')->error('Error creating view mode: @message', ['@message' => $e->getMessage()]);
+    return t('Error creating view mode. Check logs for details.');
   }
-
-  // Create the 'hotlinks_index' view mode
-  $view_mode = EntityViewMode::create([
-    'id' => 'node.hotlinks_index',
-    'label' => 'Hotlinks Index',
-    'targetEntityType' => 'node',
-    'status' => TRUE,
-    'enabled' => TRUE,
-  ]);
-  $view_mode->save();
-
-  // Create view display for the new mode
-  $view_display = EntityViewDisplay::create([
-    'targetEntityType' => 'node',
-    'bundle' => 'hotlink',
-    'mode' => 'hotlinks_index',
-    'status' => TRUE,
-  ]);
-
-  // Configure the display components
-  $view_display
-    ->setComponent('title', [
-      'type' => 'string',
-      'label' => 'hidden',
-      'weight' => 0,
-      'settings' => [
-        'link_to_entity' => TRUE,
-      ],
-    ]);
-
-  // Add thumbnail if field exists
-  $thumbnail_field = \Drupal::entityTypeManager()
-    ->getStorage('field_config')
-    ->load('node.hotlink.field_hotlink_thumbnail');
-    
-  if ($thumbnail_field) {
-    $view_display->setComponent('field_hotlink_thumbnail', [
-      'type' => 'image',
-      'label' => 'hidden',
-      'weight' => 1,
-      'settings' => [
-        'image_style' => 'thumbnail',
-        'image_link' => 'content',
-      ],
-    ]);
-  }
-
-  $view_display
-    ->setComponent('field_hotlink_url', [
-      'type' => 'link',
-      'label' => 'hidden',
-      'weight' => 2,
-      'settings' => [
-        'trim_length' => 80,
-        'url_only' => FALSE,
-        'url_plain' => FALSE,
-        'rel' => 'noopener noreferrer',
-        'target' => '_blank',
-      ],
-    ])
-    ->setComponent('field_hotlink_category', [
-      'type' => 'entity_reference_label',
-      'label' => 'inline',
-      'weight' => 3,
-      'settings' => [
-        'link' => TRUE,
-      ],
-    ])
-    ->setComponent('field_hotlink_description', [
-      'type' => 'text_default',
-      'label' => 'hidden',
-      'weight' => 4,
-    ])
-    ->removeComponent('body')
-    ->removeComponent('links')
-    ->save();
-
-  return t('Created "Hotlinks Index" display mode for hotlinks.');
 }
 
 /**
  * Ensure hotlinks_index view mode is properly enabled.
  */
 function hotlinks_update_8005() {
-  // Make sure the view mode is properly enabled
-  $view_mode = \Drupal::entityTypeManager()->getStorage('entity_view_mode')->load('node.hotlinks_index');
-  
-  if (!$view_mode) {
-    // Create the view mode if it doesn't exist
-    $view_mode = \Drupal\Core\Entity\Entity\EntityViewMode::create([
-      'id' => 'node.hotlinks_index',
-      'label' => 'Hotlinks Index',
-      'targetEntityType' => 'node',
-      'status' => TRUE,
-      'enabled' => TRUE,
-    ]);
-    $view_mode->save();
+  try {
+    _hotlinks_create_view_mode();
+    
+    // Clear entity display repository cache
+    \Drupal::service('entity_display.repository')->clearDisplayModeInfo();
+    \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+
+    return t('Ensured hotlinks_index view mode is enabled.');
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks')->error('Error enabling view mode: @message', ['@message' => $e->getMessage()]);
+    return t('Error enabling view mode. Check logs for details.');
   }
-
-  // Ensure it's enabled
-  $view_mode->setStatus(TRUE);
-  $view_mode->save();
-
-  // Clear entity display repository cache
-  \Drupal::service('entity_display.repository')->clearDisplayModeInfo();
-  \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
-
-  return t('Ensured hotlinks_index view mode is enabled.');
 }
 
 /**
@@ -675,23 +711,35 @@ function hotlinks_update_8006() {
  * Ensure vocabulary exists and fix any issues.
  */
 function hotlinks_update_8007() {
-  // Check if vocabulary exists
-  $vocabulary = \Drupal::entityTypeManager()
-    ->getStorage('taxonomy_vocabulary')
-    ->load('hotlink_categories');
-
-  if (!$vocabulary) {
-    // Create vocabulary if missing
-    $vocabulary = Vocabulary::create([
-      'vid' => 'hotlink_categories',
-      'name' => 'Hotlink Categories',
-      'description' => 'Categories for organizing hotlinks',
-      'hierarchy' => 1,
-    ]);
-    $vocabulary->save();
-    
-    return t('Created missing Hotlink Categories vocabulary.');
+  try {
+    _hotlinks_create_vocabulary();
+    return t('Hotlink Categories vocabulary exists and is properly configured.');
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks')->error('Error ensuring vocabulary: @message', ['@message' => $e->getMessage()]);
+    return t('Error ensuring vocabulary exists. Check logs for details.');
   }
+}
 
-  return t('Hotlink Categories vocabulary exists and is properly configured.');
+/**
+ * Fix installation process and field dependencies.
+ */
+function hotlinks_update_8008() {
+  try {
+    // Ensure all components exist in proper order
+    _hotlinks_create_vocabulary();
+    _hotlinks_create_content_type();
+    _hotlinks_create_fields();
+    _hotlinks_create_view_mode();
+    _hotlinks_configure_displays();
+    
+    // Clear all caches
+    \Drupal::entityTypeManager()->clearCachedDefinitions();
+    \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+    \Drupal::service('entity_display.repository')->clearDisplayModeInfo();
+    
+    return t('Fixed installation process and verified all components exist.');
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks')->error('Error fixing installation: @message', ['@message' => $e->getMessage()]);
+    return t('Error fixing installation. Check logs for details: @error', ['@error' => $e->getMessage()]);
+  }
 }

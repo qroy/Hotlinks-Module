@@ -12,36 +12,36 @@ use Drupal\taxonomy\Entity\Vocabulary;
  * Implements hook_install().
  */
 function hotlinks_startrek_install() {
-  // Add a small delay to ensure dependencies are fully loaded
-  drupal_register_shutdown_function('_hotlinks_startrek_delayed_install');
-}
-
-/**
- * Delayed install function to create Star Trek categories.
- */
-function _hotlinks_startrek_delayed_install() {
-  // Ensure the main hotlinks module is fully installed first
+  // Strict dependency checking
   if (!\Drupal::moduleHandler()->moduleExists('hotlinks')) {
-    \Drupal::messenger()->addError(t('Hotlinks module must be installed and enabled before installing Star Trek categories.'));
-    return;
+    throw new \Exception('Hotlinks module must be installed and enabled before installing Hotlinks Star Trek Categories.');
+  }
+
+  // Verify hotlink_categories vocabulary exists
+  $vocabulary = \Drupal::entityTypeManager()
+    ->getStorage('taxonomy_vocabulary')
+    ->load('hotlink_categories');
+
+  if (!$vocabulary) {
+    throw new \Exception('Hotlinks vocabulary not found. Please ensure the main Hotlinks module is properly installed and run update hooks if necessary.');
   }
 
   // Clear caches to ensure all entity definitions are available
   \Drupal::entityTypeManager()->clearCachedDefinitions();
   \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
   
-  // Check if hotlink_categories vocabulary exists
-  $vocabulary = \Drupal::entityTypeManager()
-    ->getStorage('taxonomy_vocabulary')
-    ->load('hotlink_categories');
-
-  if (!$vocabulary) {
-    \Drupal::logger('hotlinks_startrek')->error('Hotlinks vocabulary not found. Main Hotlinks module may not be properly installed.');
-    \Drupal::messenger()->addError(t('Hotlinks vocabulary not found. Please ensure the main Hotlinks module is properly installed, then try enabling this module again.'));
-    return;
+  try {
+    _hotlinks_startrek_create_categories();
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks_startrek')->error('Error during Star Trek categories installation: @message', ['@message' => $e->getMessage()]);
+    throw new \Exception('Failed to install Star Trek categories: ' . $e->getMessage());
   }
+}
 
-  // Create Star Trek Wormhole categories structure
+/**
+ * Create Star Trek Wormhole categories structure.
+ */
+function _hotlinks_startrek_create_categories() {
   $categories = [
     'Star Trek Communities' => [
       'description' => 'Connect with fellow fans through chat rooms, fan clubs, and discussion forums.',
@@ -184,6 +184,7 @@ function _hotlinks_startrek_delayed_install() {
         ]);
         $parent_term->save();
         $created_count++;
+        \Drupal::logger('hotlinks_startrek')->info('Created parent category: @name', ['@name' => $parent_name]);
 
         // Create subcategories
         foreach ($category_data['subcategories'] as $subcategory_name) {
@@ -200,21 +201,7 @@ function _hotlinks_startrek_delayed_install() {
               // Set description for Star Trek Universe subcategories
               $subcategory_description = '';
               if ($parent_name === 'Star Trek Universe') {
-                $series_descriptions = [
-                  'TOS' => 'The Original Series (1966-1969) - The classic series with Kirk, Spock, and McCoy.',
-                  'TAS' => 'The Animated Series (1973-1974) - Animated continuation of TOS with the original cast.',
-                  'TNG' => 'The Next Generation (1987-1994) - Set 100 years after TOS with Captain Picard and the Enterprise-D.',
-                  'DS9' => 'Deep Space Nine (1993-1999) - Space station-based series focusing on politics, war, and religion.',
-                  'VOY' => 'Voyager (1995-2001) - Lost in the Delta Quadrant with Captain Janeway and her crew.',
-                  'ENT' => 'Enterprise (2001-2005) - Prequel series set before TOS with Captain Archer.',
-                  'DIS' => 'Discovery (2017-present) - Modern series set before TOS focusing on the spore drive and Mirror Universe.',
-                  'PIC' => 'Picard (2020-2023) - Sequel series following Jean-Luc Picard in his later years.',
-                  'SNW' => 'Strange New Worlds (2022-present) - Captain Pike and the Enterprise crew before Kirk.',
-                  'LD' => 'Lower Decks (2020-present) - Animated comedy series following lower-ranking Starfleet officers.',
-                  'PRO' => 'Prodigy (2021-present) - Animated series aimed at younger audiences featuring a diverse crew.',
-                  'Movies' => 'Star Trek films from The Motion Picture (1979) to the recent reboot series.',
-                ];
-                $subcategory_description = $series_descriptions[$subcategory_name] ?? '';
+                $subcategory_description = _hotlinks_startrek_get_series_description($subcategory_name);
               }
 
               $child_term = Term::create([
@@ -228,16 +215,18 @@ function _hotlinks_startrek_delayed_install() {
               ]);
               $child_term->save();
               $created_count++;
+              \Drupal::logger('hotlinks_startrek')->info('Created subcategory: @name under @parent', [
+                '@name' => $subcategory_name,
+                '@parent' => $parent_name,
+              ]);
             }
           } catch (\Exception $e) {
-            $errors[] = t('Failed to create subcategory "@name": @error', [
+            $error_msg = t('Failed to create subcategory "@name": @error', [
               '@name' => $subcategory_name,
               '@error' => $e->getMessage(),
             ]);
-            \Drupal::logger('hotlinks_startrek')->error('Failed to create subcategory @name: @error', [
-              '@name' => $subcategory_name,
-              '@error' => $e->getMessage(),
-            ]);
+            $errors[] = $error_msg;
+            \Drupal::logger('hotlinks_startrek')->error($error_msg);
           }
         }
       } else {
@@ -246,14 +235,12 @@ function _hotlinks_startrek_delayed_install() {
         ]);
       }
     } catch (\Exception $e) {
-      $errors[] = t('Failed to create parent category "@name": @error', [
+      $error_msg = t('Failed to create parent category "@name": @error', [
         '@name' => $parent_name,
         '@error' => $e->getMessage(),
       ]);
-      \Drupal::logger('hotlinks_startrek')->error('Failed to create parent category @name: @error', [
-        '@name' => $parent_name,
-        '@error' => $e->getMessage(),
-      ]);
+      $errors[] = $error_msg;
+      \Drupal::logger('hotlinks_startrek')->error($error_msg);
     }
   }
 
@@ -269,11 +256,34 @@ function _hotlinks_startrek_delayed_install() {
     foreach ($errors as $error) {
       \Drupal::messenger()->addError($error);
     }
+    throw new \Exception('Some categories failed to create. See messages above for details.');
   }
 
   // Clear taxonomy caches
   \Drupal::entityTypeManager()->getStorage('taxonomy_term')->resetCache();
   \Drupal::service('plugin.manager.menu.link')->rebuild();
+}
+
+/**
+ * Get description for Star Trek series subcategories.
+ */
+function _hotlinks_startrek_get_series_description($series_name) {
+  $series_descriptions = [
+    'TOS' => 'The Original Series (1966-1969) - The classic series with Kirk, Spock, and McCoy.',
+    'TAS' => 'The Animated Series (1973-1974) - Animated continuation of TOS with the original cast.',
+    'TNG' => 'The Next Generation (1987-1994) - Set 100 years after TOS with Captain Picard and the Enterprise-D.',
+    'DS9' => 'Deep Space Nine (1993-1999) - Space station-based series focusing on politics, war, and religion.',
+    'VOY' => 'Voyager (1995-2001) - Lost in the Delta Quadrant with Captain Janeway and her crew.',
+    'ENT' => 'Enterprise (2001-2005) - Prequel series set before TOS with Captain Archer.',
+    'DIS' => 'Discovery (2017-present) - Modern series set before TOS focusing on the spore drive and Mirror Universe.',
+    'PIC' => 'Picard (2020-2023) - Sequel series following Jean-Luc Picard in his later years.',
+    'SNW' => 'Strange New Worlds (2022-present) - Captain Pike and the Enterprise crew before Kirk.',
+    'LD' => 'Lower Decks (2020-present) - Animated comedy series following lower-ranking Starfleet officers.',
+    'PRO' => 'Prodigy (2021-present) - Animated series aimed at younger audiences featuring a diverse crew.',
+    'Movies' => 'Star Trek films from The Motion Picture (1979) to the recent reboot series.',
+  ];
+  
+  return $series_descriptions[$series_name] ?? '';
 }
 
 /**
@@ -315,11 +325,13 @@ function hotlinks_startrek_uninstall() {
         foreach ($children as $child) {
           $child->delete();
           $deleted_count++;
+          \Drupal::logger('hotlinks_startrek')->info('Deleted child term: @name', ['@name' => $child->getName()]);
         }
         
         // Then delete parent
         $term->delete();
         $deleted_count++;
+        \Drupal::logger('hotlinks_startrek')->info('Deleted parent term: @name', ['@name' => $term->getName()]);
       }
     } catch (\Exception $e) {
       \Drupal::logger('hotlinks_startrek')->error('Error deleting category @name: @error', [
@@ -347,10 +359,15 @@ function hotlinks_startrek_update_8001() {
     ]);
 
   if (empty($existing_terms)) {
-    // No Star Trek categories found, run the install process
-    \Drupal::logger('hotlinks_startrek')->notice('Re-running Star Trek categories installation...');
-    _hotlinks_startrek_delayed_install();
-    return t('Re-installed Star Trek categories that were missing from initial installation.');
+    try {
+      // No Star Trek categories found, run the install process
+      \Drupal::logger('hotlinks_startrek')->notice('Re-running Star Trek categories installation...');
+      _hotlinks_startrek_create_categories();
+      return t('Re-installed Star Trek categories that were missing from initial installation.');
+    } catch (\Exception $e) {
+      \Drupal::logger('hotlinks_startrek')->error('Error re-installing categories: @error', ['@error' => $e->getMessage()]);
+      return t('Error re-installing categories. Check logs for details: @error', ['@error' => $e->getMessage()]);
+    }
   }
 
   return t('Star Trek categories already exist, no action needed.');
@@ -360,8 +377,45 @@ function hotlinks_startrek_update_8001() {
  * Force create categories if they still don't exist.
  */
 function hotlinks_startrek_update_8002() {
-  // Force creation regardless of existing categories
-  \Drupal::logger('hotlinks_startrek')->notice('Forcing Star Trek categories installation...');
-  _hotlinks_startrek_delayed_install();
-  return t('Forced Star Trek categories installation.');
+  try {
+    // Force creation regardless of existing categories
+    \Drupal::logger('hotlinks_startrek')->notice('Forcing Star Trek categories installation...');
+    _hotlinks_startrek_create_categories();
+    return t('Forced Star Trek categories installation.');
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks_startrek')->error('Error forcing category installation: @error', ['@error' => $e->getMessage()]);
+    return t('Error forcing installation. Check logs for details: @error', ['@error' => $e->getMessage()]);
+  }
 }
+
+/**
+ * Fix installation process and verify all components.
+ */
+function hotlinks_startrek_update_8003() {
+  try {
+    // Verify dependencies still exist
+    if (!\Drupal::moduleHandler()->moduleExists('hotlinks')) {
+      throw new \Exception('Hotlinks module not found. Cannot continue.');
+    }
+
+    $vocabulary = \Drupal::entityTypeManager()
+      ->getStorage('taxonomy_vocabulary')
+      ->load('hotlink_categories');
+
+    if (!$vocabulary) {
+      throw new \Exception('Hotlinks vocabulary not found. Please reinstall the main Hotlinks module.');
+    }
+
+    // Recreate categories
+    _hotlinks_startrek_create_categories();
+
+    // Clear caches
+    \Drupal::entityTypeManager()->clearCachedDefinitions();
+    \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+
+    return t('Fixed Star Trek categories installation and verified all components.');
+    
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks_startrek')->error('Error in update 8003: @error', ['@error' => $e->getMessage()]);
+    return t('Error fixing installation. Check logs for details: @error', ['@error' => $e->getMessage()]);
+  }
