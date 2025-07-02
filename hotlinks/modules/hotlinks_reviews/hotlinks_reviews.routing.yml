@@ -1,0 +1,23 @@
+otlinks_reviews.ajax_rate:
+  path: '/hotlinks/ajax/rate/{node}'
+  defaults:
+    _controller: '\Drupal\hotlinks_reviews\Controller\HotlinksReviewsAjaxController::rate'
+  requirements:
+    _permission: 'rate hotlinks'
+    _csrf_token: 'TRUE'
+  options:
+    parameters:
+      node:
+        type: entity:node
+
+hotlinks_reviews.ajax_review:
+  path: '/hotlinks/ajax/review/{node}'
+  defaults:
+    _controller: '\Drupal\hotlinks_reviews\Controller\HotlinksReviewsAjaxController::review'
+  requirements:
+    _permission: 'review hotlinks'
+    _csrf_token: 'TRUE'
+  options:
+    parameters:
+      node:
+        type: entity:node

@@ -1,0 +1,19 @@
+rate hotlinks:
+  title: 'Rate hotlinks'
+  description: 'Give star ratings to hotlinks'
+
+review hotlinks:
+  title: 'Review hotlinks'
+  description: 'Write text reviews for hotlinks'
+
+moderate hotlink reviews:
+  title: 'Moderate hotlink reviews'
+  description: 'Approve, edit, and delete hotlink reviews'
+
+view hotlink ratings:
+  title: 'View hotlink ratings'
+  description: 'See ratings and reviews for hotlinks'
+
+administer hotlink reviews:
+  title: 'Administer hotlink reviews'
+  description: 'Configure review system settings'

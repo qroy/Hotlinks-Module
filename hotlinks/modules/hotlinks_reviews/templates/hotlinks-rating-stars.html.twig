@@ -1,0 +1,39 @@
+{#
+/**
+ * @file
+ * Template for displaying rating stars.
+ *
+ * Available variables:
+ * - rating: The rating value (0-5).
+ * - count: Number of reviews.
+ * - max_rating: Maximum rating (usually 5).
+ * - compact: Whether to use compact display.
+ * - attributes: HTML attributes for the container.
+ */
+#}
+{%
+  set classes = [
+    'hotlinks-rating-stars',
+    compact ? 'compact',
+  ]
+%}
+<div{{ attributes.addClass(classes) }} data-rating="{{ rating }}" data-max-rating="{{ max_rating }}" data-count="{{ count }}">
+  {% if rating > 0 %}
+    {% for i in 1..max_rating %}
+      {% set star_class = 'hotlinks-rating-star' %}
+      {% if i <= rating|round %}
+        {% set star_class = star_class ~ ' filled' %}
+      {% elseif i <= rating %}
+        {% set star_class = star_class ~ ' half' %}
+      {% else %}
+        {% set star_class = star_class ~ ' empty' %}
+      {% endif %}
+      <span class="{{ star_class }}">★</span>
+    {% endfor %}
+    {% if count > 0 %}
+      <span class="hotlinks-rating-count">{{ count }}</span>
+    {% endif %}
+  {% else %}
+    <span class="hotlinks-no-ratings">{{ 'No ratings yet'|t }}</span>
+  {% endif %}
+</div>

@@ -1,0 +1,66 @@
+{#
+/**
+ * @file
+ * Template for review summary display.
+ *
+ * Available variables:
+ * - average_rating: Average rating value.
+ * - total_reviews: Total number of reviews.
+ * - rating_breakdown: Array of rating counts by star level.
+ */
+#}
+<div class="hotlinks-review-summary">
+  <h3>{{ 'Reviews and Ratings'|t }}</h3>
+  
+  {% if total_reviews > 0 %}
+    <div class="overall-rating">
+      <div class="rating-number">{{ average_rating|number_format(1) }}</div>
+      <div class="rating-details">
+        <div class="hotlinks-rating-stars">
+          {% for i in 1..5 %}
+            {% set star_class = 'hotlinks-rating-star' %}
+            {% if i <= average_rating|round %}
+              {% set star_class = star_class ~ ' filled' %}
+            {% elseif i <= average_rating %}
+              {% set star_class = star_class ~ ' half' %}
+            {% else %}
+              {% set star_class = star_class ~ ' empty' %}
+            {% endif %}
+            <span class="{{ star_class }}">★</span>
+          {% endfor %}
+        </div>
+        <div class="rating-summary">
+          {{ 'Based on @count reviews'|t({'@count': total_reviews}) }}
+        </div>
+      </div>
+    </div>
+
+    {% if rating_breakdown %}
+      <div class="rating-breakdown">
+        {% for stars in 5..1 %}
+          {% set count = rating_breakdown[stars] ?? 0 %}
+          {% set percentage = total_reviews > 0 ? (count / total_reviews * 100)|round : 0 %}
+          
+          <div class="stars">
+            {{ stars }} ★
+          </div>
+          <div class="bar">
+            <div class="bar-fill" data-width="{{ percentage }}"></div>
+          </div>
+          <div class="count">{{ count }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if average_rating >= 4.0 %}
+      <div class="starfleet-approval">
+        <span class="approval-badge">🖖 {{ 'Starfleet Command Approved'|t }}</span>
+      </div>
+    {% endif %}
+
+  {% else %}
+    <div class="no-reviews">
+      <p>{{ 'No reviews yet. Be the first to review this link!'|t }}</p>
+    </div>
+  {% endif %}
+</div>

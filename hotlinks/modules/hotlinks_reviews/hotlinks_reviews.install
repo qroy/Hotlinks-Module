@@ -1,0 +1,272 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the Hotlinks Reviews submodule.
+ */
+
+use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\Core\Entity\Entity\EntityFormDisplay;
+use Drupal\Core\Entity\Entity\EntityViewDisplay;
+
+/**
+ * Implements hook_install().
+ */
+function hotlinks_reviews_install() {
+  // Ensure the main hotlinks module is fully installed first
+  if (!\Drupal::moduleHandler()->moduleExists('hotlinks')) {
+    \Drupal::messenger()->addError(t('Hotlinks module must be installed and enabled before installing Hotlinks Reviews.'));
+    return;
+  }
+
+  // Check if hotlink content type exists
+  $node_type = \Drupal::entityTypeManager()
+    ->getStorage('node_type')
+    ->load('hotlink');
+
+  if (!$node_type) {
+    \Drupal::messenger()->addError(t('Hotlinks content type not found. Please ensure the main Hotlinks module is properly installed, then try enabling this module again.'));
+    return;
+  }
+
+  // Create rating field (1-5 stars)
+  $field_storage = FieldStorageConfig::create([
+    'field_name' => 'field_hotlink_rating',
+    'entity_type' => 'node',
+    'type' => 'integer',
+    'cardinality' => 1,
+    'settings' => [
+      'min' => 1,
+      'max' => 5,
+    ],
+  ]);
+  $field_storage->save();
+
+  $field_config = FieldConfig::create([
+    'field_storage' => $field_storage,
+    'bundle' => 'hotlink',
+    'label' => 'Your Rating',
+    'description' => 'Rate this link from 1 to 5 stars',
+    'required' => FALSE,
+    'settings' => [
+      'min' => 1,
+      'max' => 5,
+    ],
+  ]);
+  $field_config->save();
+
+  // Create review text field
+  $field_storage = FieldStorageConfig::create([
+    'field_name' => 'field_hotlink_review',
+    'entity_type' => 'node',
+    'type' => 'text_long',
+    'cardinality' => 1,
+  ]);
+  $field_storage->save();
+
+  $field_config = FieldConfig::create([
+    'field_storage' => $field_storage,
+    'bundle' => 'hotlink',
+    'label' => 'Your Review',
+    'description' => 'Write a review of this link (optional)',
+    'required' => FALSE,
+  ]);
+  $field_config->save();
+
+  // Create average rating field (computed)
+  $field_storage = FieldStorageConfig::create([
+    'field_name' => 'field_hotlink_avg_rating',
+    'entity_type' => 'node',
+    'type' => 'decimal',
+    'cardinality' => 1,
+    'settings' => [
+      'precision' => 3,
+      'scale' => 2,
+    ],
+  ]);
+  $field_storage->save();
+
+  $field_config = FieldConfig::create([
+    'field_storage' => $field_storage,
+    'bundle' => 'hotlink',
+    'label' => 'Average Rating',
+    'description' => 'Average rating from all reviews',
+    'required' => FALSE,
+  ]);
+  $field_config->save();
+
+  // Create review count field
+  $field_storage = FieldStorageConfig::create([
+    'field_name' => 'field_hotlink_review_count',
+    'entity_type' => 'node',
+    'type' => 'integer',
+    'cardinality' => 1,
+  ]);
+  $field_storage->save();
+
+  $field_config = FieldConfig::create([
+    'field_storage' => $field_storage,
+    'bundle' => 'hotlink',
+    'label' => 'Review Count',
+    'description' => 'Total number of reviews',
+    'required' => FALSE,
+  ]);
+  $field_config->save();
+
+  // Update form display - add rating and review fields
+  $form_display = EntityFormDisplay::load('node.hotlink.default');
+  if ($form_display) {
+    $form_display
+      ->setComponent('field_hotlink_rating', [
+        'type' => 'hotlinks_rating_widget',
+        'weight' => 5,
+        'settings' => [
+          'placeholder' => 'Click to rate...',
+        ],
+      ])
+      ->setComponent('field_hotlink_review', [
+        'type' => 'text_textarea',
+        'weight' => 6,
+        'settings' => [
+          'rows' => 4,
+          'placeholder' => 'Share your thoughts about this link...',
+        ],
+      ])
+      ->removeComponent('field_hotlink_avg_rating')
+      ->removeComponent('field_hotlink_review_count')
+      ->save();
+  }
+
+  // Update default view display
+  $view_display = EntityViewDisplay::load('node.hotlink.default');
+  if ($view_display) {
+    $view_display
+      ->setComponent('field_hotlink_avg_rating', [
+        'type' => 'hotlinks_rating_display',
+        'label' => 'hidden',
+        'weight' => 1,
+        'settings' => [
+          'show_count' => TRUE,
+        ],
+      ])
+      ->setComponent('field_hotlink_rating', [
+        'type' => 'hotlinks_user_rating_display',
+        'label' => 'inline',
+        'weight' => 2,
+      ])
+      ->setComponent('field_hotlink_review', [
+        'type' => 'text_default',
+        'label' => 'inline',
+        'weight' => 5,
+      ])
+      ->removeComponent('field_hotlink_review_count')
+      ->save();
+  }
+
+  // Update hotlinks_index view display
+  $index_view_display = EntityViewDisplay::load('node.hotlink.hotlinks_index');
+  if ($index_view_display) {
+    $index_view_display
+      ->setComponent('field_hotlink_avg_rating', [
+        'type' => 'hotlinks_rating_stars',
+        'label' => 'hidden',
+        'weight' => 2,
+        'settings' => [
+          'show_count' => TRUE,
+          'compact' => TRUE,
+        ],
+      ])
+      ->removeComponent('field_hotlink_rating')
+      ->removeComponent('field_hotlink_review')
+      ->removeComponent('field_hotlink_review_count')
+      ->save();
+  }
+
+  // Add review settings to main hotlinks configuration
+  $hotlinks_config = \Drupal::configFactory()->getEditable('hotlinks.settings');
+  $hotlinks_config
+    ->set('reviews_enabled', TRUE)
+    ->set('allow_anonymous_reviews', FALSE)
+    ->set('require_review_text', FALSE)
+    ->set('moderate_reviews', TRUE)
+    ->set('allow_review_updates', TRUE)
+    ->set('show_reviewer_names', TRUE)
+    ->set('min_rating_for_display', 1)
+    ->set('use_star_trek_labels', FALSE)
+    ->set('starfleet_approval', TRUE)
+    ->save();
+
+  \Drupal::messenger()->addMessage(t('Hotlinks Reviews submodule installed successfully! Users can now rate and review hotlinks. Configure review settings in the main Hotlinks configuration.'));
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function hotlinks_reviews_uninstall() {
+  // Delete all review-related data
+  $fields_to_delete = [
+    'field_hotlink_rating',
+    'field_hotlink_review',
+    'field_hotlink_avg_rating',
+    'field_hotlink_review_count',
+  ];
+
+  foreach ($fields_to_delete as $field_name) {
+    $field_config = \Drupal::entityTypeManager()
+      ->getStorage('field_config')
+      ->load('node.hotlink.' . $field_name);
+    
+    if ($field_config) {
+      $field_config->delete();
+    }
+
+    $field_storage = \Drupal::entityTypeManager()
+      ->getStorage('field_storage_config')
+      ->load('node.' . $field_name);
+    
+    if ($field_storage) {
+      $field_storage->delete();
+    }
+  }
+
+  // Remove review settings from main hotlinks configuration
+  $hotlinks_config = \Drupal::configFactory()->getEditable('hotlinks.settings');
+  $hotlinks_config
+    ->clear('reviews_enabled')
+    ->clear('allow_anonymous_reviews')
+    ->clear('require_review_text')
+    ->clear('moderate_reviews')
+    ->clear('allow_review_updates')
+    ->clear('show_reviewer_names')
+    ->clear('min_rating_for_display')
+    ->clear('use_star_trek_labels')
+    ->clear('starfleet_approval')
+    ->save();
+
+  // Clear review data from state
+  \Drupal::state()->delete('hotlinks_reviews.ratings');
+  \Drupal::state()->delete('hotlinks_reviews.reviews');
+
+  \Drupal::messenger()->addMessage(t('Hotlinks Reviews submodule uninstalled. All rating and review data has been removed.'));
+}
+
+/**
+ * Re-run install if fields weren't created during initial install.
+ */
+function hotlinks_reviews_update_8001() {
+  // Check if any review fields exist
+  $existing_field = \Drupal::entityTypeManager()
+    ->getStorage('field_config')
+    ->load('node.hotlink.field_hotlink_rating');
+
+  if (!$existing_field) {
+    // No review fields found, run the install process
+    \Drupal::logger('hotlinks_reviews')->notice('Re-running Hotlinks Reviews installation...');
+    hotlinks_reviews_install();
+    return t('Re-installed Hotlinks Reviews fields that were missing from initial installation.');
+  }
+
+  return t('Hotlinks Reviews fields already exist, no action needed.');
+}

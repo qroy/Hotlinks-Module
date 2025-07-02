@@ -1,0 +1,24 @@
+{#
+/**
+ * @file
+ * Template for interactive rating widget.
+ *
+ * Available variables:
+ * - rating: Current rating value.
+ * - max_rating: Maximum rating (usually 5).
+ * - name: Field name for form input.
+ */
+#}
+<div class="hotlinks-rating-widget" data-max-rating="{{ max_rating }}">
+  {% for i in 1..max_rating %}
+    {% set star_class = 'rating-star' %}
+    {% if i <= rating %}
+      {% set star_class = star_class ~ ' selected' %}
+    {% else %}
+      {% set star_class = star_class ~ ' empty' %}
+    {% endif %}
+    <span class="{{ star_class }}" data-rating="{{ i }}">★</span>
+  {% endfor %}
+  <span class="rating-label">{{ 'Click to rate'|t }}</span>
+  <input type="hidden" name="{{ name }}" value="{{ rating }}" data-rating-input="true" />
+</div>

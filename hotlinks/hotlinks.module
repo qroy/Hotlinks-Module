@@ -8,6 +8,7 @@
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\file\Entity\File;
 
 /**
  * Implements hook_help().
@@ -71,6 +72,264 @@ function hotlinks_entity_presave(EntityInterface $entity) {
         }
       }
     }
+
+    // Auto-generate thumbnail if none exists and URL is provided
+    if ($entity->hasField('field_hotlink_thumbnail') && 
+        $entity->get('field_hotlink_thumbnail')->isEmpty() && 
+        !$entity->get('field_hotlink_url')->isEmpty()) {
+      
+      $url_field = $entity->get('field_hotlink_url')->first();
+      if ($url_field && $url_field->uri) {
+        hotlinks_generate_thumbnail($entity, $url_field->uri);
+      }
+    }
+  }
+}
+
+/**
+ * Generate thumbnail for a hotlink entity.
+ *
+ * @param \Drupal\Core\Entity\EntityInterface $entity
+ *   The hotlink entity.
+ * @param string $url
+ *   The URL to generate thumbnail for.
+ */
+function hotlinks_generate_thumbnail(EntityInterface $entity, $url) {
+  $config = \Drupal::config('hotlinks.settings');
+  $service = $config->get('auto_thumbnail_service') ?: 'screenshotapi';
+  
+  try {
+    $thumbnail_url = '';
+    
+    switch ($service) {
+      case 'thum_io':
+        $thumbnail_url = hotlinks_get_thum_io_thumbnail($url);
+        break;
+        
+      case 'screenshotapi':
+        $api_key = $config->get('screenshotapi_key');
+        $thumbnail_url = hotlinks_get_screenshotapi_thumbnail($url, $api_key);
+        break;
+        
+      case 'websiteshots':
+        $thumbnail_url = hotlinks_get_websiteshots_thumbnail($url);
+        break;
+        
+      case 'screenshotmachine':
+        $thumbnail_url = hotlinks_get_screenshotmachine_thumbnail($url);
+        break;
+        
+      case 'htmlcsstoimage':
+        $api_key = $config->get('htmlcsstoimage_key');
+        if (empty($api_key)) {
+          \Drupal::logger('hotlinks')->warning('HTML/CSS to Image API key not configured.');
+          return;
+        }
+        $thumbnail_url = hotlinks_get_htmlcsstoimage_thumbnail($url, $api_key);
+        break;
+    }
+    
+    if (!empty($thumbnail_url)) {
+      hotlinks_save_thumbnail_from_url($entity, $thumbnail_url, $url);
+    }
+    
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks')->error('Failed to generate thumbnail for @url: @error', [
+      '@url' => $url,
+      '@error' => $e->getMessage(),
+    ]);
+  }
+}
+
+/**
+ * Get thumbnail URL from Thum.io service.
+ */
+function hotlinks_get_thum_io_thumbnail($url) {
+  // Clean URL - Thum.io doesn't like double-encoded URLs
+  $clean_url = hotlinks_clean_url($url);
+  return "https://image.thum.io/get/width/300/crop/400/noanimate/{$clean_url}";
+}
+
+/**
+ * Get thumbnail URL from ScreenshotAPI service.
+ */
+function hotlinks_get_screenshotapi_thumbnail($url, $api_key = '') {
+  $clean_url = hotlinks_clean_url($url);
+  $params = [
+    'url' => $clean_url,
+    'width' => 300,
+    'height' => 200,
+    'output' => 'image',
+    'file_type' => 'png',
+    'wait_for_event' => 'load',
+  ];
+  
+  if (!empty($api_key)) {
+    $params['token'] = $api_key;
+  }
+  
+  return 'https://shot.screenshotapi.net/screenshot?' . http_build_query($params);
+}
+
+/**
+ * Get thumbnail URL from WebsiteShots service.
+ */
+function hotlinks_get_websiteshots_thumbnail($url) {
+  $clean_url = hotlinks_clean_url($url);
+  $encoded_url = urlencode($clean_url);
+  return "https://s0.wordpress.com/mshots/v1/{$encoded_url}?w=300&h=200";
+}
+
+/**
+ * Get thumbnail URL from ScreenshotMachine service.
+ */
+function hotlinks_get_screenshotmachine_thumbnail($url) {
+  $clean_url = hotlinks_clean_url($url);
+  $params = [
+    'url' => $clean_url,
+    'dimension' => '1024x768',
+    'format' => 'png',
+    'cacheLimit' => '0',
+  ];
+  return 'https://api.screenshotmachine.com?' . http_build_query($params);
+}
+
+/**
+ * Clean and validate URL for thumbnail services.
+ */
+function hotlinks_clean_url($url) {
+  // Remove any existing URL encoding
+  $url = urldecode($url);
+  
+  // Ensure the URL has a protocol
+  if (!preg_match('/^https?:\/\//', $url)) {
+    $url = 'https://' . $url;
+  }
+  
+  // Parse and rebuild URL to ensure it's clean
+  $parsed = parse_url($url);
+  if (!$parsed || !isset($parsed['host'])) {
+    throw new \Exception('Invalid URL: ' . $url);
+  }
+  
+  $clean_url = $parsed['scheme'] . '://' . $parsed['host'];
+  
+  if (isset($parsed['port'])) {
+    $clean_url .= ':' . $parsed['port'];
+  }
+  
+  if (isset($parsed['path'])) {
+    $clean_url .= $parsed['path'];
+  }
+  
+  if (isset($parsed['query'])) {
+    $clean_url .= '?' . $parsed['query'];
+  }
+  
+  if (isset($parsed['fragment'])) {
+    $clean_url .= '#' . $parsed['fragment'];
+  }
+  
+  return $clean_url;
+}
+
+/**
+ * Get thumbnail from HTML/CSS to Image service.
+ */
+function hotlinks_get_htmlcsstoimage_thumbnail($url, $api_key) {
+  $client = \Drupal::httpClient();
+  
+  try {
+    $response = $client->post('https://hcti.io/v1/image', [
+      'auth' => [$api_key, ''],
+      'form_params' => [
+        'url' => $url,
+        'viewport_width' => 1280,
+        'viewport_height' => 720,
+        'device_scale' => 1,
+      ],
+      'timeout' => 30,
+    ]);
+    
+    $data = json_decode($response->getBody(), TRUE);
+    return $data['url'] ?? '';
+    
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks')->error('HTML/CSS to Image API error: @error', [
+      '@error' => $e->getMessage(),
+    ]);
+    return '';
+  }
+}
+
+/**
+ * Save thumbnail from URL to hotlink entity.
+ */
+function hotlinks_save_thumbnail_from_url(EntityInterface $entity, $thumbnail_url, $original_url) {
+  try {
+    $client = \Drupal::httpClient();
+    
+    // Download the thumbnail
+    $response = $client->get($thumbnail_url, [
+      'timeout' => 30,
+      'headers' => [
+        'User-Agent' => 'Drupal Hotlinks Module/1.0',
+      ],
+    ]);
+    
+    if ($response->getStatusCode() !== 200) {
+      throw new \Exception('Failed to download thumbnail: HTTP ' . $response->getStatusCode());
+    }
+    
+    $image_data = $response->getBody()->getContents();
+    
+    if (empty($image_data)) {
+      throw new \Exception('Empty thumbnail data received');
+    }
+    
+    // Generate filename
+    $parsed_url = parse_url($original_url);
+    $domain = isset($parsed_url['host']) ? preg_replace('/[^a-zA-Z0-9-]/', '_', $parsed_url['host']) : 'thumbnail';
+    $filename = 'hotlink_' . $domain . '_' . time() . '.png';
+    
+    // Ensure directory exists
+    $directory = 'public://hotlinks/thumbnails';
+    \Drupal::service('file_system')->prepareDirectory($directory, \Drupal\Core\File\FileSystemInterface::CREATE_DIRECTORY);
+    
+    // Save file
+    $file_uri = $directory . '/' . $filename;
+    $file = \Drupal::service('file_system')->saveData($image_data, $file_uri, \Drupal\Core\File\FileSystemInterface::EXISTS_REPLACE);
+    
+    if ($file) {
+      // Create file entity
+      $file_entity = File::create([
+        'uri' => $file,
+        'status' => 1,
+        'uid' => \Drupal::currentUser()->id(),
+      ]);
+      $file_entity->save();
+      
+      // Set the thumbnail field
+      $entity->set('field_hotlink_thumbnail', [
+        'target_id' => $file_entity->id(),
+        'alt' => 'Thumbnail for ' . $entity->getTitle(),
+        'title' => 'Auto-generated thumbnail',
+      ]);
+      
+      \Drupal::logger('hotlinks')->info('Generated thumbnail for @title from @service', [
+        '@title' => $entity->getTitle(),
+        '@service' => \Drupal::config('hotlinks.settings')->get('auto_thumbnail_service'),
+      ]);
+      
+    } else {
+      throw new \Exception('Failed to save thumbnail file');
+    }
+    
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks')->error('Failed to save thumbnail for @title: @error', [
+      '@title' => $entity->getTitle(),
+      '@error' => $e->getMessage(),
+    ]);
   }
 }
 
@@ -123,4 +382,160 @@ function hotlinks_get_category_total_count($category_id) {
     ->accessCheck(TRUE);
 
   return $query->count()->execute();
+}
+
+/**
+ * Regenerate thumbnail for a specific hotlink.
+ * 
+ * @param int $nid
+ *   The node ID of the hotlink.
+ * 
+ * @return bool
+ *   TRUE if successful, FALSE otherwise.
+ */
+function hotlinks_regenerate_thumbnail($nid) {
+  try {
+    $hotlink = \Drupal::entityTypeManager()->getStorage('node')->load($nid);
+    
+    if (!$hotlink || $hotlink->bundle() !== 'hotlink') {
+      return FALSE;
+    }
+    
+    $url_field = $hotlink->get('field_hotlink_url');
+    if ($url_field->isEmpty()) {
+      return FALSE;
+    }
+    
+    $url = $url_field->first()->uri;
+    
+    // Clear existing thumbnail
+    $hotlink->set('field_hotlink_thumbnail', NULL);
+    
+    // Generate new thumbnail
+    hotlinks_generate_thumbnail($hotlink, $url);
+    
+    // Save the hotlink
+    $hotlink->save();
+    
+    return TRUE;
+    
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks')->error('Failed to regenerate thumbnail for node @nid: @error', [
+      '@nid' => $nid,
+      '@error' => $e->getMessage(),
+    ]);
+    return FALSE;
+  }
+}
+
+/**
+ * Test if thumbnail generation services are working.
+ */
+function hotlinks_test_services() {
+  $services = ['screenshotapi', 'websiteshots', 'screenshotmachine', 'thum_io'];
+  $test_url = 'https://www.drupal.org';
+  $results = [];
+  
+  foreach ($services as $service) {
+    try {
+      $thumbnail_url = '';
+      
+      switch ($service) {
+        case 'thum_io':
+          $thumbnail_url = hotlinks_get_thum_io_thumbnail($test_url);
+          break;
+          
+        case 'screenshotapi':
+          $thumbnail_url = hotlinks_get_screenshotapi_thumbnail($test_url);
+          break;
+          
+        case 'websiteshots':
+          $thumbnail_url = hotlinks_get_websiteshots_thumbnail($test_url);
+          break;
+          
+        case 'screenshotmachine':
+          $thumbnail_url = hotlinks_get_screenshotmachine_thumbnail($test_url);
+          break;
+      }
+      
+      if (!empty($thumbnail_url)) {
+        // Test if the URL actually returns an image
+        $client = \Drupal::httpClient();
+        $response = $client->head($thumbnail_url, [
+          'timeout' => 10,
+          'headers' => [
+            'User-Agent' => 'Mozilla/5.0 (compatible; Drupal Hotlinks)',
+          ],
+        ]);
+        
+        $results[$service] = [
+          'status' => 'success',
+          'url' => $thumbnail_url,
+          'http_code' => $response->getStatusCode(),
+        ];
+      } else {
+        $results[$service] = [
+          'status' => 'failed',
+          'error' => 'No thumbnail URL generated',
+        ];
+      }
+      
+    } catch (\Exception $e) {
+      $results[$service] = [
+        'status' => 'error',
+        'error' => $e->getMessage(),
+      ];
+    }
+  }
+  
+  return $results;
+}
+
+/**
+ * Check system requirements for thumbnail generation.
+ */
+function hotlinks_check_requirements() {
+  $requirements = [];
+  
+  // Check if cURL is available
+  $requirements['curl'] = [
+    'title' => 'cURL Extension',
+    'status' => extension_loaded('curl'),
+    'message' => extension_loaded('curl') ? 'Available' : 'Not available - required for thumbnail generation',
+  ];
+  
+  // Check if GD or ImageMagick is available
+  $requirements['image_library'] = [
+    'title' => 'Image Processing',
+    'status' => extension_loaded('gd') || extension_loaded('imagick'),
+    'message' => extension_loaded('gd') ? 'GD available' : (extension_loaded('imagick') ? 'ImageMagick available' : 'No image processing library found'),
+  ];
+  
+  // Check thumbnail directory
+  $directory = 'public://hotlinks/thumbnails';
+  $file_system = \Drupal::service('file_system');
+  $directory_exists = $file_system->prepareDirectory($directory, \Drupal\Core\File\FileSystemInterface::CREATE_DIRECTORY);
+  
+  $requirements['thumbnail_directory'] = [
+    'title' => 'Thumbnail Directory',
+    'status' => $directory_exists,
+    'message' => $directory_exists ? "Directory exists and is writable: $directory" : "Cannot create or write to directory: $directory",
+  ];
+  
+  // Check HTTP client
+  try {
+    $client = \Drupal::httpClient();
+    $response = $client->head('https://www.google.com', ['timeout' => 5]);
+    $http_working = $response->getStatusCode() < 400;
+  } catch (\Exception $e) {
+    $http_working = FALSE;
+  }
+  
+  $requirements['http_client'] = [
+    'title' => 'HTTP Client',
+    'status' => $http_working,
+    'message' => $http_working ? 'Working' : 'Cannot make HTTP requests - check network connectivity',
+  ];
+  
+  return $requirements;
 }

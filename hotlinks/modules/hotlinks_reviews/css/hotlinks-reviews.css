@@ -1,0 +1,495 @@
+/**
+ * @file
+ * Star Trek themed styling for the Hotlinks Reviews submodule.
+ */
+
+/* Rating Stars */
+.hotlinks-rating-stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  font-size: 1.1em;
+}
+
+.hotlinks-rating-stars.compact {
+  font-size: 0.9em;
+  gap: 0.15em;
+}
+
+.hotlinks-rating-star {
+  color: #FFD700; /* Classic gold star color */
+  text-shadow: 0 0 2px rgba(255, 215, 0, 0.3);
+  transition: all 0.2s ease;
+}
+
+.hotlinks-rating-star.empty {
+  color: #444;
+  opacity: 0.3;
+}
+
+.hotlinks-rating-star.half {
+  background: linear-gradient(90deg, #FFD700 50%, #444 50%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.hotlinks-rating-star.filled {
+  color: #FFD700;
+}
+
+/* Interactive Rating Widget */
+.hotlinks-rating-widget {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
+  margin: 0.5em 0;
+}
+
+.hotlinks-rating-widget .rating-star {
+  font-size: 1.5em;
+  color: #444;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.hotlinks-rating-widget .rating-star:hover,
+.hotlinks-rating-widget .rating-star.hover {
+  color: #FFD700;
+  text-shadow: 0 0 4px rgba(255, 215, 0, 0.5);
+  transform: scale(1.1);
+}
+
+.hotlinks-rating-widget .rating-star.selected {
+  color: #FFD700;
+  text-shadow: 0 0 3px rgba(255, 215, 0, 0.4);
+}
+
+.hotlinks-rating-widget .rating-star:focus {
+  outline: 2px solid #0066CC;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.hotlinks-rating-widget .rating-label {
+  margin-left: 0.5em;
+  font-style: italic;
+  opacity: 0.8;
+  min-width: 8em;
+  font-size: 0.9em;
+}
+
+/* Rating Count */
+.hotlinks-rating-count {
+  font-size: 0.85em;
+  opacity: 0.7;
+  margin-left: 0.5em;
+}
+
+.hotlinks-rating-count::before {
+  content: "(";
+}
+
+.hotlinks-rating-count::after {
+  content: ")";
+}
+
+/* Review Summary */
+.hotlinks-review-summary {
+  background: rgba(0, 100, 200, 0.05); /* Subtle Star Trek blue tint */
+  border: 1px solid rgba(0, 100, 200, 0.2);
+  border-radius: 8px;
+  padding: 1em;
+  margin: 1em 0;
+}
+
+.hotlinks-review-summary h3 {
+  margin-top: 0;
+  color: #0066CC; /* Star Trek blue */
+  font-weight: bold;
+}
+
+.hotlinks-review-summary .overall-rating {
+  display: flex;
+  align-items: center;
+  gap: 1em;
+  margin-bottom: 1em;
+}
+
+.hotlinks-review-summary .rating-number {
+  font-size: 2em;
+  font-weight: bold;
+  color: #FFD700;
+  text-shadow: 0 0 2px rgba(255, 215, 0, 0.3);
+}
+
+.hotlinks-review-summary .rating-details {
+  flex: 1;
+}
+
+.hotlinks-review-summary .rating-summary {
+  margin-top: 0.25em;
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+.hotlinks-review-summary .rating-breakdown {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.5em;
+  align-items: center;
+  max-width: 300px;
+}
+
+.hotlinks-review-summary .rating-breakdown .stars {
+  font-size: 0.8em;
+  min-width: 3em;
+}
+
+.hotlinks-review-summary .rating-breakdown .bar {
+  height: 12px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  overflow: hidden;
+  position: relative;
+}
+
+.hotlinks-review-summary .rating-breakdown .bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #FFD700, #FFA500);
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+
+.hotlinks-review-summary .rating-breakdown .count {
+  font-size: 0.8em;
+  opacity: 0.7;
+  min-width: 2em;
+  text-align: right;
+}
+
+/* Starfleet Approval Badge */
+.starfleet-approval {
+  margin-top: 1em;
+  text-align: center;
+}
+
+.approval-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #0066CC, #004499);
+  color: white;
+  padding: 0.5em 1em;
+  border-radius: 20px;
+  font-weight: bold;
+  font-size: 0.9em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 4px rgba(0, 100, 200, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.approval-badge:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(0, 100, 200, 0.4);
+}
+
+/* No reviews state */
+.no-reviews {
+  text-align: center;
+  padding: 1em;
+  font-style: italic;
+  opacity: 0.7;
+}
+
+/* Form styling */
+.field--name-field-hotlink-rating .form-item,
+.field--name-field-hotlink-review .form-item {
+  margin-bottom: 1em;
+}
+
+.field--name-field-hotlink-rating label,
+.field--name-field-hotlink-review label {
+  font-weight: bold;
+  color: #0066CC;
+  margin-bottom: 0.5em;
+  display: block;
+}
+
+.field--name-field-hotlink-review textarea {
+  border: 2px solid rgba(0, 100, 200, 0.2);
+  border-radius: 4px;
+  padding: 0.5em;
+  transition: border-color 0.2s ease;
+  width: 100%;
+  font-family: inherit;
+}
+
+.field--name-field-hotlink-review textarea:focus {
+  border-color: #0066CC;
+  outline: none;
+  box-shadow: 0 0 5px rgba(0, 100, 200, 0.3);
+}
+
+/* Review display in node view */
+.field--name-field-hotlink-rating,
+.field--name-field-hotlink-review {
+  margin-bottom: 0.75em;
+}
+
+.field--name-field-hotlink-rating .field__label,
+.field--name-field-hotlink-review .field__label {
+  font-weight: bold;
+  color: #0066CC;
+}
+
+/* Hotlinks index view ratings */
+.node--view-mode-hotlinks-index .field--name-field-hotlink-avg-rating {
+  margin-top: 0.25em;
+}
+
+/* User rating display */
+.user-rating {
+  font-size: 0.9em;
+  color: #666;
+  margin-bottom: 0.5em;
+  padding: 0.5em;
+  background: rgba(0, 100, 200, 0.03);
+  border-radius: 4px;
+  border-left: 3px solid #0066CC;
+}
+
+.user-rating-stars {
+  color: #FFD700;
+  margin-left: 0.25em;
+  text-shadow: 0 0 1px rgba(255, 215, 0, 0.5);
+}
+
+/* No ratings state */
+.hotlinks-no-ratings {
+  font-style: italic;
+  opacity: 0.6;
+  font-size: 0.9em;
+  color: #888;
+}
+
+/* Loading and success states */
+.hotlinks-rating-widget.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.hotlinks-rating-widget.loading::after {
+  content: " ⟳";
+  animation: spin 1s linear infinite;
+  margin-left: 0.5em;
+}
+
+.hotlinks-rating-widget[aria-busy="true"] {
+  opacity: 0.7;
+}
+
+.hotlinks-rating-widget.success-flash {
+  background: rgba(0, 255, 0, 0.1);
+  border-radius: 4px;
+  transition: background 0.3s ease;
+  padding: 0.25em;
+}
+
+/* Star Trek themed elements */
+.hotlinks-rating-widget::before {
+  content: "⭐";
+  opacity: 0.3;
+  margin-right: 0.5em;
+  font-size: 0.8em;
+}
+
+.hotlinks-review-summary::before {
+  content: "📊";
+  opacity: 0.5;
+  margin-right: 0.5em;
+}
+
+/* Rating display components */
+.hotlinks-rating-display {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
+.rating-numerical {
+  font-size: 0.85em;
+  color: #666;
+  margin-left: 0.5em;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .hotlinks-review-summary .overall-rating {
+    flex-direction: column;
+    text-align: center;
+    gap: 0.5em;
+  }
+  
+  .hotlinks-review-summary .rating-breakdown {
+    max-width: 100%;
+  }
+  
+  .hotlinks-rating-widget .rating-star {
+    font-size: 1.3em;
+  }
+  
+  .hotlinks-rating-widget .rating-label {
+    display: block;
+    margin-left: 0;
+    margin-top: 0.25em;
+    text-align: center;
+  }
+  
+  .hotlinks-rating-widget {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .approval-badge {
+    font-size: 0.8em;
+    padding: 0.4em 0.8em;
+  }
+}
+
+@media (max-width: 480px) {
+  .hotlinks-rating-widget .rating-star {
+    font-size: 1.2em;
+    margin: 0 0.1em;
+  }
+  
+  .hotlinks-review-summary {
+    padding: 0.75em;
+  }
+  
+  .hotlinks-review-summary .rating-number {
+    font-size: 1.5em;
+  }
+}
+
+/* Animation keyframes */
+@keyframes rating-glow {
+  0% { text-shadow: 0 0 3px rgba(255, 215, 0, 0.4); }
+  50% { text-shadow: 0 0 8px rgba(255, 215, 0, 0.8); }
+  100% { text-shadow: 0 0 3px rgba(255, 215, 0, 0.4); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes starPop {
+  0% { transform: scale(0.5); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.hotlinks-rating-star.just-rated {
+  animation: rating-glow 0.6s ease-in-out;
+}
+
+.hotlinks-rating-star.animate-in {
+  animation: starPop 0.3s ease-out;
+}
+
+/* Accessibility improvements */
+.hotlinks-rating-widget .rating-star[tabindex="0"] {
+  cursor: pointer;
+}
+
+.hotlinks-rating-widget .rating-star[aria-pressed="true"] {
+  color: #FFD700;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .hotlinks-rating-star {
+    text-shadow: none;
+  }
+  
+  .hotlinks-rating-star.empty {
+    color: #000;
+    opacity: 1;
+  }
+  
+  .hotlinks-rating-star.filled,
+  .hotlinks-rating-star.selected {
+    color: #000;
+    background: #FFD700;
+  }
+  
+  .hotlinks-review-summary {
+    border: 2px solid #000;
+    background: #fff;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .hotlinks-rating-star,
+  .hotlinks-rating-widget .rating-star,
+  .bar-fill {
+    transition: none;
+  }
+  
+  .hotlinks-rating-star.just-rated,
+  .hotlinks-rating-star.animate-in {
+    animation: none;
+  }
+}
+
+/* Print styles */
+@media print {
+  .hotlinks-rating-widget {
+    display: none;
+  }
+  
+  .hotlinks-review-summary {
+    border: 1px solid #ccc;
+    background: none;
+    box-shadow: none;
+  }
+  
+  .hotlinks-rating-star {
+    color: #000 !important;
+    text-shadow: none;
+  }
+  
+  .approval-badge {
+    background: #ccc;
+    color: #000;
+    box-shadow: none;
+  }
+}
+
+/* Dark theme support */
+@media (prefers-color-scheme: dark) {
+  .hotlinks-review-summary {
+    background: rgba(0, 100, 200, 0.1);
+    border-color: rgba(0, 100, 200, 0.3);
+  }
+  
+  .hotlinks-rating-star.empty {
+    color: #666;
+  }
+  
+  .field--name-field-hotlink-review textarea {
+    background: #2a2a2a;
+    color: #fff;
+    border-color: rgba(0, 100, 200, 0.4);
+  }
+  
+  .user-rating {
+    background: rgba(0, 100, 200, 0.08);
+    color: #ccc;
+  }
+  
+  .hotlinks-no-ratings {
+    color: #aaa;
+  }
+}

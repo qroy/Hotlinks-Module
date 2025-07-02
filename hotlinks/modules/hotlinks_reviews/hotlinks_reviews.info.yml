@@ -1,0 +1,8 @@
+name: Hotlinks Reviews
+type: module
+description: 'Adds rating and review functionality to hotlinks with Star Trek themed styling.'
+package: Hotlinks
+core_version_requirement: ^10 || ^11
+dependencies:
+  - hotlinks:hotlinks
+configure: hotlinks.admin_settings

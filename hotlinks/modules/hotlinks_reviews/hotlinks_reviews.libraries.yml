@@ -1,0 +1,16 @@
+rating-widget:
+  css:
+    theme:
+      css/hotlinks-reviews.css: {}
+  js:
+    js/rating-widget.js: {}
+  dependencies:
+    - core/drupal
+    - core/jquery
+
+rating-display:
+  css:
+    theme:
+      css/hotlinks-reviews.css: {}
+  dependencies:
+    - core/drupal

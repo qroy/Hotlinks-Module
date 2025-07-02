@@ -184,14 +184,8 @@ class HotlinksController extends ControllerBase {
         ->getStorage('taxonomy_term')
         ->loadChildren($parent_id);
 
-      // Count total links in parent and all children
-      $parent_count = isset($hotlinks_by_category[$parent_id]) ? count($hotlinks_by_category[$parent_id]) : 0;
-      $total_count = $parent_count;
-      
-      foreach ($children as $child) {
-        $child_count = isset($hotlinks_by_category[$child->id()]) ? count($hotlinks_by_category[$child->id()]) : 0;
-        $total_count += $child_count;
-      }
+      // Use the helper function to get total count including subcategories
+      $total_count = $this->getCategoryTotalCount($parent_id);
 
       // Build parent category entry (show even if empty, like Star Trek Wormhole)
       $build[$parent_id] = [
@@ -208,7 +202,7 @@ class HotlinksController extends ControllerBase {
       ];
 
       $build[$parent_id]['main'] = [
-        '#markup' => '📁 ' . \Drupal::service('renderer')->render($parent_link) . '( ' . $total_count . ' )',
+        '#markup' => '📁 ' . \Drupal::service('renderer')->render($parent_link) . ' (' . $total_count . ')',
       ];
 
       // Subcategories list (like Star Trek Wormhole format)
@@ -222,11 +216,12 @@ class HotlinksController extends ControllerBase {
         });
 
         foreach ($children_array as $child) {
-          $child_count = isset($hotlinks_by_category[$child->id()]) ? count($hotlinks_by_category[$child->id()]) : 0;
+          // Use the helper function for child count too (includes any sub-subcategories)
+          $child_count = $this->getCategoryTotalCount($child->id());
           
           $subcategory_links[] = [
             '#type' => 'link',
-            '#title' => $child->getName(),
+            '#title' => $child->getName() . ' (' . $child_count . ')',
             '#url' => \Drupal\Core\Url::fromRoute('hotlinks.category', ['category' => $child->id()]),
             '#attributes' => ['class' => ['subcategory-link']],
           ];
@@ -273,7 +268,8 @@ class HotlinksController extends ControllerBase {
     });
 
     foreach ($children_array as $child) {
-      $child_count = isset($hotlinks_by_category[$child->id()]) ? count($hotlinks_by_category[$child->id()]) : 0;
+      // Use the helper function to get total count including any sub-subcategories
+      $child_count = $this->getCategoryTotalCount($child->id());
       
       $subcategory_links[] = [
         '#type' => 'link',
@@ -293,6 +289,43 @@ class HotlinksController extends ControllerBase {
     }
 
     return [];
+  }
+
+  /**
+   * Get total hotlinks count for a category including all subcategories.
+   * 
+   * This uses the same logic as the helper function in hotlinks.module.
+   */
+  private function getCategoryTotalCount($category_id) {
+    try {
+      $term_storage = $this->entityTypeManager->getStorage('taxonomy_term');
+      $node_storage = $this->entityTypeManager->getStorage('node');
+      
+      // Get all child term IDs using loadTree for better performance
+      $child_terms = $term_storage->loadTree('hotlink_categories', $category_id);
+      $category_ids = [$category_id];
+      
+      // Add all descendant category IDs
+      foreach ($child_terms as $child_term) {
+        $category_ids[] = $child_term->tid;
+      }
+
+      // Query for hotlinks in any of these categories
+      $query = $node_storage->getQuery()
+        ->condition('type', 'hotlink')
+        ->condition('status', 1)
+        ->condition('field_hotlink_category', $category_ids, 'IN')
+        ->accessCheck(TRUE);
+
+      return $query->count()->execute();
+      
+    } catch (\Exception $e) {
+      \Drupal::logger('hotlinks')->error('Error calculating category count for @id: @message', [
+        '@id' => $category_id,
+        '@message' => $e->getMessage(),
+      ]);
+      return 0;
+    }
   }
 
   /**
