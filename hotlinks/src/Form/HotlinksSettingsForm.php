@@ -4,10 +4,12 @@ namespace Drupal\hotlinks\Form;
 
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Component\Utility\Html;
+use Drupal\Component\Utility\UrlHelper;
 use Drupal\file\Entity\File;
 
 /**
- * Configure Hotlinks settings for this site.
+ * Configure Hotlinks settings for this site with enhanced security.
  */
 class HotlinksSettingsForm extends ConfigFormBase {
 
@@ -30,7 +32,7 @@ class HotlinksSettingsForm extends ConfigFormBase {
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
     $reviews_enabled = \Drupal::moduleHandler()->moduleExists('hotlinks_reviews');
-	$config = $this->config('hotlinks.settings');
+    $config = $this->config('hotlinks.settings');
 
     $form['display'] = [
       '#type' => 'fieldset',
@@ -90,6 +92,10 @@ class HotlinksSettingsForm extends ConfigFormBase {
           ':input[name="auto_thumbnail_service"]' => ['value' => 'screenshotapi'],
         ],
       ],
+      '#attributes' => [
+        'autocomplete' => 'off',
+        'data-security' => 'api-key',
+      ],
     ];
     
     $form['thumbnails']['htmlcsstoimage_key'] = [
@@ -107,6 +113,10 @@ class HotlinksSettingsForm extends ConfigFormBase {
           ':input[name="auto_thumbnail_service"]' => ['value' => 'htmlcsstoimage'],
         ],
       ],
+      '#attributes' => [
+        'autocomplete' => 'off',
+        'data-security' => 'api-key',
+      ],
     ];
     
     // Test thumbnail generation
@@ -121,6 +131,10 @@ class HotlinksSettingsForm extends ConfigFormBase {
       '#title' => $this->t('Test URL'),
       '#description' => $this->t('Enter a URL to test thumbnail generation with the current service.'),
       '#placeholder' => 'https://example.com',
+      '#attributes' => [
+        'pattern' => 'https?://.+',
+        'data-security' => 'url-validation',
+      ],
     ];
     
     $form['thumbnails']['test']['test_generate'] = [
@@ -209,33 +223,97 @@ class HotlinksSettingsForm extends ConfigFormBase {
         ]) . '</p>',
       ];
     }
-	
-	// Reviews settings (only if Reviews submodule is enabled)
-if ($reviews_enabled) {
-  $form['reviews'] = [
-    '#type' => 'fieldset',
-    '#title' => $this->t('Reviews & Ratings'),
-    '#description' => $this->t('Configure the rating and review system.'),
-  ];
 
-  $form['reviews']['allow_anonymous_reviews'] = [
-    '#type' => 'checkbox',
-    '#title' => $this->t('Allow anonymous reviews'),
-    '#default_value' => $config->get('allow_anonymous_reviews') ?? FALSE,
-  ];
+    // Reviews settings (only if Reviews submodule is enabled)
+    if ($reviews_enabled) {
+      $form['reviews'] = [
+        '#type' => 'fieldset',
+        '#title' => $this->t('Reviews & Ratings'),
+        '#description' => $this->t('Configure the rating and review system with security settings.'),
+      ];
 
-  $form['reviews']['moderate_reviews'] = [
-    '#type' => 'checkbox',
-    '#title' => $this->t('Moderate new reviews'),
-    '#default_value' => $config->get('moderate_reviews') ?? TRUE,
-  ];
+      $form['reviews']['allow_anonymous_reviews'] = [
+        '#type' => 'checkbox',
+        '#title' => $this->t('Allow anonymous reviews'),
+        '#default_value' => $config->get('allow_anonymous_reviews') ?? FALSE,
+        '#description' => $this->t('Warning: Anonymous reviews may require additional spam protection.'),
+      ];
 
-  $form['reviews']['starfleet_approval'] = [
-    '#type' => 'checkbox',
-    '#title' => $this->t('Show Starfleet approval badges'),
-    '#default_value' => $config->get('starfleet_approval') ?? TRUE,
-  ];
-}
+      $form['reviews']['moderate_reviews'] = [
+        '#type' => 'checkbox',
+        '#title' => $this->t('Moderate new reviews'),
+        '#default_value' => $config->get('moderate_reviews') ?? TRUE,
+        '#description' => $this->t('Recommended for security. Reviews will be held for approval before being displayed.'),
+      ];
+
+      $form['reviews']['starfleet_approval'] = [
+        '#type' => 'checkbox',
+        '#title' => $this->t('Show Starfleet approval badges'),
+        '#default_value' => $config->get('starfleet_approval') ?? TRUE,
+        '#description' => $this->t('Display special badges for highly-rated content.'),
+      ];
+
+      $form['reviews']['use_star_trek_labels'] = [
+        '#type' => 'checkbox',
+        '#title' => $this->t('Use Star Trek themed rating labels'),
+        '#default_value' => $config->get('use_star_trek_labels') ?? FALSE,
+        '#description' => $this->t('Use Star Trek themed descriptions for rating levels.'),
+      ];
+
+      $form['reviews']['security'] = [
+        '#type' => 'details',
+        '#title' => $this->t('Security Settings'),
+        '#open' => FALSE,
+      ];
+
+      $form['reviews']['security']['rate_limit_submissions'] = [
+        '#type' => 'number',
+        '#title' => $this->t('Maximum submissions per time window'),
+        '#default_value' => $config->get('rate_limit_submissions') ?? 5,
+        '#min' => 1,
+        '#max' => 50,
+        '#description' => $this->t('Maximum number of ratings/reviews a user can submit within the time window.'),
+      ];
+
+      $form['reviews']['security']['rate_limit_window'] = [
+        '#type' => 'select',
+        '#title' => $this->t('Rate limiting time window'),
+        '#default_value' => $config->get('rate_limit_window') ?? 300,
+        '#options' => [
+          60 => $this->t('1 minute'),
+          300 => $this->t('5 minutes'),
+          600 => $this->t('10 minutes'),
+          1800 => $this->t('30 minutes'),
+          3600 => $this->t('1 hour'),
+        ],
+        '#description' => $this->t('Time window for rate limiting. Shorter windows provide better spam protection.'),
+      ];
+
+      $form['reviews']['security']['max_review_length'] = [
+        '#type' => 'number',
+        '#title' => $this->t('Maximum review length (characters)'),
+        '#default_value' => $config->get('max_review_length') ?? 2000,
+        '#min' => 100,
+        '#max' => 10000,
+        '#description' => $this->t('Maximum length for review text. Longer reviews may contain spam.'),
+      ];
+
+      $form['reviews']['security']['min_review_length'] = [
+        '#type' => 'number',
+        '#title' => $this->t('Minimum review length (characters)'),
+        '#default_value' => $config->get('min_review_length') ?? 10,
+        '#min' => 5,
+        '#max' => 100,
+        '#description' => $this->t('Minimum length for review text to prevent spam and low-quality submissions.'),
+      ];
+
+      $form['reviews']['security']['enable_spam_detection'] = [
+        '#type' => 'checkbox',
+        '#title' => $this->t('Enable basic spam detection'),
+        '#default_value' => $config->get('enable_spam_detection') ?? TRUE,
+        '#description' => $this->t('Automatically detect and block obvious spam in reviews.'),
+      ];
+    }
 
     return parent::buildForm($form, $form_state);
   }
@@ -246,23 +324,111 @@ if ($reviews_enabled) {
   public function validateForm(array &$form, FormStateInterface $form_state) {
     // Validate HTML/CSS to Image API key if that service is selected
     if ($form_state->getValue('auto_thumbnail_service') === 'htmlcsstoimage') {
-      $api_key = $form_state->getValue('htmlcsstoimage_key');
+      $api_key = trim($form_state->getValue('htmlcsstoimage_key'));
       if (empty($api_key)) {
         $form_state->setErrorByName('htmlcsstoimage_key', $this->t('HTML/CSS to Image API key is required when using this service.'));
+      } elseif (!$this->validateApiKey($api_key)) {
+        $form_state->setErrorByName('htmlcsstoimage_key', $this->t('API key format is invalid.'));
       }
+    }
+
+    // Validate ScreenshotAPI key if provided
+    $screenshot_key = trim($form_state->getValue('screenshotapi_key'));
+    if (!empty($screenshot_key) && !$this->validateApiKey($screenshot_key)) {
+      $form_state->setErrorByName('screenshotapi_key', $this->t('ScreenshotAPI key format is invalid.'));
     }
     
     // Validate test URL if test generation is requested
     if ($form_state->getValue('test_generate')) {
-      $test_url = $form_state->getValue('test_url');
+      $test_url = trim($form_state->getValue('test_url'));
       if (empty($test_url)) {
         $form_state->setErrorByName('test_url', $this->t('Please enter a test URL.'));
-      } elseif (!filter_var($test_url, FILTER_VALIDATE_URL)) {
+      } elseif (!$this->validateUrl($test_url)) {
         $form_state->setErrorByName('test_url', $this->t('Please enter a valid URL.'));
+      }
+    }
+
+    // Validate review security settings
+    if (\Drupal::moduleHandler()->moduleExists('hotlinks_reviews')) {
+      $max_length = $form_state->getValue('max_review_length');
+      $min_length = $form_state->getValue('min_review_length');
+      
+      if ($min_length >= $max_length) {
+        $form_state->setErrorByName('min_review_length', $this->t('Minimum review length must be less than maximum review length.'));
+      }
+      
+      if ($min_length < 5) {
+        $form_state->setErrorByName('min_review_length', $this->t('Minimum review length should be at least 5 characters to prevent spam.'));
+      }
+      
+      if ($max_length > 10000) {
+        $form_state->setErrorByName('max_review_length', $this->t('Maximum review length should not exceed 10,000 characters for performance reasons.'));
       }
     }
     
     parent::validateForm($form, $form_state);
+  }
+
+  /**
+   * Validate API key format.
+   */
+  private function validateApiKey($api_key) {
+    // Basic API key validation - alphanumeric plus common symbols
+    if (!preg_match('/^[a-zA-Z0-9_\-\.]{8,128}$/', $api_key)) {
+      return FALSE;
+    }
+    
+    // Check for obvious fake keys
+    $fake_patterns = [
+      '/^(test|fake|invalid|demo)/i',
+      '/^(your_api_key|api_key_here)/i',
+      '/^[0]{8,}$/', // All zeros
+      '/^[1]{8,}$/', // All ones
+    ];
+    
+    foreach ($fake_patterns as $pattern) {
+      if (preg_match($pattern, $api_key)) {
+        return FALSE;
+      }
+    }
+    
+    return TRUE;
+  }
+
+  /**
+   * Enhanced URL validation with security checks.
+   */
+  private function validateUrl($url) {
+    // Basic URL validation
+    if (!UrlHelper::isValid($url, TRUE)) {
+      return FALSE;
+    }
+    
+    // Security checks
+    $parsed = parse_url($url);
+    if (!$parsed || !isset($parsed['scheme'], $parsed['host'])) {
+      return FALSE;
+    }
+    
+    // Only allow HTTP and HTTPS
+    if (!in_array($parsed['scheme'], ['http', 'https'])) {
+      return FALSE;
+    }
+    
+    // Block localhost and private IP ranges for security
+    $host = $parsed['host'];
+    if (in_array($host, ['localhost', '127.0.0.1', '::1'])) {
+      return FALSE;
+    }
+    
+    // Block private IP ranges
+    if (filter_var($host, FILTER_VALIDATE_IP)) {
+      if (!filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) {
+        return FALSE;
+      }
+    }
+    
+    return TRUE;
   }
 
   /**
@@ -271,19 +437,21 @@ if ($reviews_enabled) {
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $config = $this->config('hotlinks.settings');
     
+    // Sanitize and save basic settings
     $config
-      ->set('show_descriptions', $form_state->getValue('show_descriptions'))
-      ->set('open_in_new_window', $form_state->getValue('open_in_new_window'))
-      ->set('show_category_counts', $form_state->getValue('show_category_counts'))
-      ->set('auto_thumbnail_service', $form_state->getValue('auto_thumbnail_service'))
-      ->set('screenshotapi_key', $form_state->getValue('screenshotapi_key'))
-      ->set('htmlcsstoimage_key', $form_state->getValue('htmlcsstoimage_key'))
-      ->save();
+      ->set('show_descriptions', (bool) $form_state->getValue('show_descriptions'))
+      ->set('open_in_new_window', (bool) $form_state->getValue('open_in_new_window'))
+      ->set('show_category_counts', (bool) $form_state->getValue('show_category_counts'))
+      ->set('auto_thumbnail_service', Html::escape($form_state->getValue('auto_thumbnail_service')))
+      ->set('screenshotapi_key', Html::escape(trim($form_state->getValue('screenshotapi_key'))))
+      ->set('htmlcsstoimage_key', Html::escape(trim($form_state->getValue('htmlcsstoimage_key'))));
       
     // Test thumbnail generation if requested
     if ($form_state->getValue('test_generate')) {
-      $test_url = $form_state->getValue('test_url');
-      $this->testThumbnailGeneration($test_url);
+      $test_url = trim($form_state->getValue('test_url'));
+      if ($this->validateUrl($test_url)) {
+        $this->testThumbnailGeneration($test_url);
+      }
     }
     
     // Generate ONE missing thumbnail for testing
@@ -302,14 +470,22 @@ if ($reviews_enabled) {
       $this->regenerateThumbnails(FALSE);
       $this->messenger()->addMessage($this->t('Missing thumbnail generation has been queued.'));
     }
-	// Reviews settings (only if submodule is enabled)
+
+    // Reviews settings (only if submodule is enabled)
     if (\Drupal::moduleHandler()->moduleExists('hotlinks_reviews')) {
       $config
-        ->set('allow_anonymous_reviews', $form_state->getValue('allow_anonymous_reviews'))
-        ->set('moderate_reviews', $form_state->getValue('moderate_reviews'))
-        ->set('starfleet_approval', $form_state->getValue('starfleet_approval'));
-	}
+        ->set('allow_anonymous_reviews', (bool) $form_state->getValue('allow_anonymous_reviews'))
+        ->set('moderate_reviews', (bool) $form_state->getValue('moderate_reviews'))
+        ->set('starfleet_approval', (bool) $form_state->getValue('starfleet_approval'))
+        ->set('use_star_trek_labels', (bool) $form_state->getValue('use_star_trek_labels'))
+        ->set('rate_limit_submissions', (int) $form_state->getValue('rate_limit_submissions'))
+        ->set('rate_limit_window', (int) $form_state->getValue('rate_limit_window'))
+        ->set('max_review_length', (int) $form_state->getValue('max_review_length'))
+        ->set('min_review_length', (int) $form_state->getValue('min_review_length'))
+        ->set('enable_spam_detection', (bool) $form_state->getValue('enable_spam_detection'));
+    }
 
+    $config->save();
     parent::submitForm($form, $form_state);
   }
   
@@ -339,6 +515,11 @@ if ($reviews_enabled) {
       return;
     }
     
+    if (!$hotlink->hasField('field_hotlink_url')) {
+      $this->messenger()->addError($this->t('Hotlink "@title" is missing URL field.', ['@title' => $hotlink->getTitle()]));
+      return;
+    }
+    
     $url_field = $hotlink->get('field_hotlink_url');
     if ($url_field->isEmpty()) {
       $this->messenger()->addError($this->t('Hotlink "@title" has no URL.', ['@title' => $hotlink->getTitle()]));
@@ -347,23 +528,28 @@ if ($reviews_enabled) {
     
     $url = $url_field->first()->uri;
     
+    if (!$this->validateUrl($url)) {
+      $this->messenger()->addError($this->t('Hotlink "@title" has invalid URL.', ['@title' => $hotlink->getTitle()]));
+      return;
+    }
+    
     try {
       $result = $this->generateThumbnailForEntity($hotlink, $url);
       
       if ($result) {
         $hotlink->save();
         $this->messenger()->addMessage($this->t('Successfully generated thumbnail for "@title".', [
-          '@title' => $hotlink->getTitle()
+          '@title' => Html::escape($hotlink->getTitle())
         ]));
       } else {
         $this->messenger()->addError($this->t('Failed to generate thumbnail for "@title".', [
-          '@title' => $hotlink->getTitle()
+          '@title' => Html::escape($hotlink->getTitle())
         ]));
       }
       
     } catch (\Exception $e) {
       $this->messenger()->addError($this->t('Error generating thumbnail: @error', [
-        '@error' => $e->getMessage()
+        '@error' => Html::escape($e->getMessage())
       ]));
       \Drupal::logger('hotlinks')->error('Thumbnail generation error: @error', [
         '@error' => $e->getMessage()
@@ -388,12 +574,12 @@ if ($reviews_enabled) {
         
         if ($response->getStatusCode() === 200) {
           $this->messenger()->addMessage($this->t('Test successful! Thumbnail URL generated and accessible: <a href="@url" target="_blank">@url</a>', [
-            '@url' => $thumbnail_url,
+            '@url' => Html::escape($thumbnail_url),
           ]));
         } else {
           $this->messenger()->addWarning($this->t('Thumbnail URL generated but returned HTTP @code: <a href="@url" target="_blank">@url</a>', [
             '@code' => $response->getStatusCode(),
-            '@url' => $thumbnail_url,
+            '@url' => Html::escape($thumbnail_url),
           ]));
         }
       } else {
@@ -401,7 +587,7 @@ if ($reviews_enabled) {
       }
       
     } catch (\Exception $e) {
-      $this->messenger()->addError($this->t('Test failed: @error', ['@error' => $e->getMessage()]));
+      $this->messenger()->addError($this->t('Test failed: @error', ['@error' => Html::escape($e->getMessage())]));
       \Drupal::logger('hotlinks')->error('Thumbnail test failed: @error', ['@error' => $e->getMessage()]);
     }
   }
@@ -432,16 +618,15 @@ if ($reviews_enabled) {
   }
   
   /**
-   * Get thumbnail URL from configured service.
+   * Get thumbnail URL from configured service with enhanced security.
    */
   private function getThumbnailUrl($url, $service, $config) {
-    // Clean up the URL first - remove any extra protocols or encoding
+    // Clean and validate URL first
     $clean_url = $this->cleanUrl($url);
     
     switch ($service) {
       case 'thum_io':
-        // Thum.io doesn't need URL encoding in the path, just clean URL
-        return "https://image.thum.io/get/width/300/crop/400/noanimate/{$clean_url}";
+        return "https://image.thum.io/get/width/300/crop/400/noanimate/" . urlencode($clean_url);
         
       case 'screenshotapi':
         $params = [
@@ -453,20 +638,18 @@ if ($reviews_enabled) {
           'wait_for_event' => 'load',
         ];
         
-        $api_key = $config->get('screenshotapi_key');
-        if (!empty($api_key)) {
+        $api_key = trim($config->get('screenshotapi_key'));
+        if (!empty($api_key) && $this->validateApiKey($api_key)) {
           $params['token'] = $api_key;
         }
         
         return 'https://shot.screenshotapi.net/screenshot?' . http_build_query($params);
         
       case 'websiteshots':
-        // WordPress mshots service
         $encoded_url = urlencode($clean_url);
         return "https://s0.wordpress.com/mshots/v1/{$encoded_url}?w=300&h=200";
         
       case 'screenshotmachine':
-        // Alternative free service
         $params = [
           'url' => $clean_url,
           'dimension' => '1024x768',
@@ -476,9 +659,9 @@ if ($reviews_enabled) {
         return 'https://api.screenshotmachine.com?' . http_build_query($params);
         
       case 'htmlcsstoimage':
-        $api_key = $config->get('htmlcsstoimage_key');
-        if (empty($api_key)) {
-          throw new \Exception('HTML/CSS to Image API key not configured');
+        $api_key = trim($config->get('htmlcsstoimage_key'));
+        if (empty($api_key) || !$this->validateApiKey($api_key)) {
+          throw new \Exception('HTML/CSS to Image API key not configured or invalid');
         }
         
         $client = \Drupal::httpClient();
@@ -497,12 +680,12 @@ if ($reviews_enabled) {
         return $data['url'] ?? '';
         
       default:
-        throw new \Exception('Unknown thumbnail service: ' . $service);
+        throw new \Exception('Unknown thumbnail service: ' . Html::escape($service));
     }
   }
   
   /**
-   * Clean and validate URL for thumbnail services.
+   * Clean and validate URL for thumbnail services with enhanced security.
    */
   private function cleanUrl($url) {
     // Remove any existing URL encoding
@@ -516,47 +699,77 @@ if ($reviews_enabled) {
     // Parse and rebuild URL to ensure it's clean
     $parsed = parse_url($url);
     if (!$parsed || !isset($parsed['host'])) {
-      throw new \Exception('Invalid URL: ' . $url);
+      throw new \Exception('Invalid URL: ' . Html::escape($url));
+    }
+    
+    // Security check - validate the host
+    if (!$this->validateUrl($url)) {
+      throw new \Exception('URL failed security validation: ' . Html::escape($url));
     }
     
     $clean_url = $parsed['scheme'] . '://' . $parsed['host'];
     
     if (isset($parsed['port'])) {
-      $clean_url .= ':' . $parsed['port'];
+      $clean_url .= ':' . (int) $parsed['port'];
     }
     
     if (isset($parsed['path'])) {
-      $clean_url .= $parsed['path'];
+      // Sanitize path
+      $clean_url .= '/' . ltrim($parsed['path'], '/');
     }
     
     if (isset($parsed['query'])) {
-      $clean_url .= '?' . $parsed['query'];
+      // Sanitize query parameters
+      parse_str($parsed['query'], $query_params);
+      $clean_query = http_build_query($query_params);
+      if (!empty($clean_query)) {
+        $clean_url .= '?' . $clean_query;
+      }
     }
     
     if (isset($parsed['fragment'])) {
-      $clean_url .= '#' . $parsed['fragment'];
+      $clean_url .= '#' . urlencode($parsed['fragment']);
     }
     
     return $clean_url;
   }
   
   /**
-   * Save thumbnail from URL to entity.
+   * Save thumbnail from URL to entity with enhanced security.
    */
   private function saveThumbnailFromUrl($entity, $thumbnail_url, $original_url) {
     try {
+      // Validate thumbnail URL
+      if (!$this->validateUrl($thumbnail_url)) {
+        throw new \Exception('Thumbnail URL failed security validation');
+      }
+      
       $client = \Drupal::httpClient();
       
-      // Download the thumbnail
+      // Download the thumbnail with security headers
       $response = $client->get($thumbnail_url, [
         'timeout' => 30,
         'headers' => [
           'User-Agent' => 'Drupal Hotlinks Module/1.0',
+          'Accept' => 'image/png,image/jpeg,image/gif,image/webp',
         ],
+        'max_redirects' => 3,
       ]);
       
       if ($response->getStatusCode() !== 200) {
         throw new \Exception('Failed to download thumbnail: HTTP ' . $response->getStatusCode());
+      }
+      
+      // Check content type
+      $content_type = $response->getHeaderLine('Content-Type');
+      if (!preg_match('/^image\/(png|jpeg|gif|webp)/', $content_type)) {
+        throw new \Exception('Invalid content type: ' . Html::escape($content_type));
+      }
+      
+      // Check content length
+      $content_length = $response->getHeaderLine('Content-Length');
+      if ($content_length && $content_length > 5242880) { // 5MB limit
+        throw new \Exception('Image too large: ' . number_format($content_length) . ' bytes');
       }
       
       $image_data = $response->getBody()->getContents();
@@ -565,44 +778,71 @@ if ($reviews_enabled) {
         throw new \Exception('Empty thumbnail data received');
       }
       
-      // Generate filename
+      // Validate image data
+      $image_info = getimagesizefromstring($image_data);
+      if (!$image_info) {
+        throw new \Exception('Invalid image data');
+      }
+      
+      // Check image dimensions for security
+      list($width, $height) = $image_info;
+      if ($width > 2000 || $height > 2000) {
+        throw new \Exception('Image dimensions too large: ' . $width . 'x' . $height);
+      }
+      
+      if ($width < 50 || $height < 50) {
+        throw new \Exception('Image dimensions too small: ' . $width . 'x' . $height);
+      }
+      
+      // Generate secure filename
       $parsed_url = parse_url($original_url);
-      $domain = isset($parsed_url['host']) ? preg_replace('/[^a-zA-Z0-9-]/', '_', $parsed_url['host']) : 'thumbnail';
-      $filename = 'hotlink_' . $domain . '_' . time() . '.png';
+      $domain = isset($parsed_url['host']) ? 
+        preg_replace('/[^a-zA-Z0-9-]/', '_', $parsed_url['host']) : 
+        'thumbnail';
+      
+      // Sanitize domain name
+      $domain = substr($domain, 0, 50); // Limit length
+      $filename = 'hotlink_' . $domain . '_' . time() . '_' . bin2hex(random_bytes(4)) . '.png';
       
       // Ensure directory exists
       $directory = 'public://hotlinks/thumbnails';
-      \Drupal::service('file_system')->prepareDirectory($directory, \Drupal\Core\File\FileSystemInterface::CREATE_DIRECTORY);
+      $file_system = \Drupal::service('file_system');
+      if (!$file_system->prepareDirectory($directory, \Drupal\Core\File\FileSystemInterface::CREATE_DIRECTORY)) {
+        throw new \Exception('Cannot create thumbnail directory');
+      }
       
-      // Save file
+      // Save file with proper security
       $file_uri = $directory . '/' . $filename;
-      $file = \Drupal::service('file_system')->saveData($image_data, $file_uri, \Drupal\Core\File\FileSystemInterface::EXISTS_REPLACE);
+      $file = $file_system->saveData($image_data, $file_uri, \Drupal\Core\File\FileSystemInterface::EXISTS_REPLACE);
       
-      if ($file) {
-        // Create file entity
-        $file_entity = File::create([
-          'uri' => $file,
-          'status' => 1,
-          'uid' => \Drupal::currentUser()->id(),
-        ]);
-        $file_entity->save();
-        
-        // Set the thumbnail field
-        $entity->set('field_hotlink_thumbnail', [
-          'target_id' => $file_entity->id(),
-          'alt' => 'Thumbnail for ' . $entity->getTitle(),
-          'title' => 'Auto-generated thumbnail',
-        ]);
-        
-        \Drupal::logger('hotlinks')->info('Generated thumbnail for @title', [
-          '@title' => $entity->getTitle(),
-        ]);
-        
-        return TRUE;
-        
-      } else {
+      if (!$file) {
         throw new \Exception('Failed to save thumbnail file');
       }
+      
+      // Create file entity
+      $file_entity = File::create([
+        'uri' => $file,
+        'status' => 1,
+        'uid' => \Drupal::currentUser()->id(),
+        'filename' => $filename,
+        'filemime' => $image_info['mime'],
+        'filesize' => strlen($image_data),
+      ]);
+      $file_entity->save();
+      
+      // Set the thumbnail field
+      $entity->set('field_hotlink_thumbnail', [
+        'target_id' => $file_entity->id(),
+        'alt' => 'Thumbnail for ' . Html::escape($entity->getTitle()),
+        'title' => 'Auto-generated thumbnail',
+      ]);
+      
+      \Drupal::logger('hotlinks')->info('Generated thumbnail for @title from @service', [
+        '@title' => $entity->getTitle(),
+        '@service' => $this->config('hotlinks.settings')->get('auto_thumbnail_service'),
+      ]);
+      
+      return TRUE;
       
     } catch (\Exception $e) {
       \Drupal::logger('hotlinks')->error('Failed to save thumbnail for @title: @error', [
@@ -663,9 +903,19 @@ if ($reviews_enabled) {
     
     if ($hotlink && $hotlink->bundle() === 'hotlink') {
       try {
+        if (!$hotlink->hasField('field_hotlink_url')) {
+          throw new \Exception('Hotlink missing URL field');
+        }
+        
         $url_field = $hotlink->get('field_hotlink_url');
         if (!$url_field->isEmpty()) {
           $url = $url_field->first()->uri;
+          
+          // Validate URL before processing
+          $form = new static(\Drupal::configFactory());
+          if (!$form->validateUrl($url)) {
+            throw new \Exception('Invalid URL: ' . $url);
+          }
           
           if ($force_regenerate) {
             // Clear existing thumbnail
@@ -677,7 +927,6 @@ if ($reviews_enabled) {
             hotlinks_generate_thumbnail($hotlink, $url);
           } else {
             // Fallback: create a new instance to use the method
-            $form = new static(\Drupal::configFactory());
             $result = $form->generateThumbnailForEntity($hotlink, $url);
             if (!$result) {
               throw new \Exception('Thumbnail generation failed');
@@ -751,5 +1000,4 @@ if ($reviews_enabled) {
       \Drupal::messenger()->addError(t('Thumbnail generation encountered errors.'));
     }
   }
-
 }

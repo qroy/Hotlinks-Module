@@ -4,7 +4,7 @@ hotlinks_reviews.ajax_rate:
     _controller: '\Drupal\hotlinks_reviews\Controller\HotlinksReviewsAjaxController::rate'
   requirements:
     _permission: 'rate hotlinks'
-    _csrf_token: 'TRUE'
+    _method: 'POST'
   options:
     parameters:
       node:
@@ -16,8 +16,16 @@ hotlinks_reviews.ajax_review:
     _controller: '\Drupal\hotlinks_reviews\Controller\HotlinksReviewsAjaxController::review'
   requirements:
     _permission: 'review hotlinks'
-    _csrf_token: 'TRUE'
+    _method: 'POST'
   options:
     parameters:
       node:
         type: entity:node
+
+hotlinks_reviews.get_token:
+  path: '/hotlinks/ajax/token'
+  defaults:
+    _controller: '\Drupal\hotlinks_reviews\Controller\HotlinksReviewsAjaxController::getToken'
+  requirements:
+    _permission: 'access content'
+    _method: 'GET'

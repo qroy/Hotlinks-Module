@@ -1,10 +1,75 @@
 /**
  * @file
- * Interactive rating widget for Hotlinks Reviews.
+ * Interactive rating widget for Hotlinks Reviews with enhanced security.
  */
 
 (function ($, Drupal, once) {
   'use strict';
+
+  // Security token cache
+  let tokenCache = {};
+
+  /**
+   * Get CSRF token for a specific action and node.
+   */
+  async function getSecurityToken(action, nodeId) {
+    const cacheKey = `${action}_${nodeId}`;
+    
+    // Check cache first (tokens expire after 1 hour)
+    if (tokenCache[cacheKey] && tokenCache[cacheKey].expires > Date.now()) {
+      return tokenCache[cacheKey].token;
+    }
+    
+    try {
+      const response = await fetch(`/hotlinks/ajax/token?action=${encodeURIComponent(action)}&node_id=${encodeURIComponent(nodeId)}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'same-origin'
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Cache the token
+      tokenCache[cacheKey] = {
+        token: data.token,
+        expires: Date.now() + (55 * 60 * 1000) // 55 minutes (5 min buffer)
+      };
+      
+      return data.token;
+    } catch (error) {
+      console.error('Failed to get security token:', error);
+      Drupal.announce('Security error. Please refresh the page and try again.');
+      return null;
+    }
+  }
+
+  /**
+   * Sanitize text input to prevent XSS.
+   */
+  function sanitizeInput(input) {
+    if (typeof input !== 'string') {
+      return '';
+    }
+    
+    // Create a temporary element to leverage browser's built-in escaping
+    const temp = document.createElement('div');
+    temp.textContent = input;
+    return temp.innerHTML;
+  }
+
+  /**
+   * Validate rating value.
+   */
+  function validateRating(rating) {
+    const numRating = parseInt(rating, 10);
+    return !isNaN(numRating) && numRating >= 1 && numRating <= 5;
+  }
 
   /**
    * Rating widget behavior.
@@ -63,6 +128,12 @@
           e.preventDefault();
           var newRating = $(this).data('rating');
           
+          // Validate rating
+          if (!validateRating(newRating)) {
+            Drupal.announce('Invalid rating value.');
+            return;
+          }
+          
           // Allow clicking same star to clear rating
           if (newRating === currentRating) {
             newRating = 0;
@@ -83,7 +154,7 @@
           $widget.trigger('ratingChanged', [newRating]);
         });
 
-        // Keyboard support
+        // Keyboard support with security considerations
         $stars.on('keydown', function (e) {
           var $star = $(this);
           var rating = $star.data('rating');
@@ -105,6 +176,10 @@
               if (rating < 5) {
                 $stars.filter('[data-rating="' + (rating + 1) + '"]').focus();
               }
+              break;
+            case 27: // Escape - clear focus for security
+              e.preventDefault();
+              $(this).blur();
               break;
           }
         });
@@ -145,55 +220,219 @@
   };
 
   /**
-   * AJAX rating submission.
+   * AJAX rating submission with enhanced security.
    */
   Drupal.behaviors.hotlinksAjaxRating = {
     attach: function (context, settings) {
       once('ajax-rating', '.hotlinks-rating-widget', context).forEach(function (element) {
         var $widget = $(element);
         
-        $widget.on('ratingChanged', function (e, rating) {
+        $widget.on('ratingChanged', async function (e, rating) {
           var nodeId = $widget.data('node-id');
           
-          if (!nodeId) return;
+          if (!nodeId) {
+            console.error('No node ID found for rating widget');
+            return;
+          }
+          
+          // Validate rating on client side
+          if (!validateRating(rating) && rating !== 0) {
+            Drupal.announce('Invalid rating value.');
+            return;
+          }
           
           // Show loading state
           $widget.addClass('loading').attr('aria-busy', 'true');
           
-          $.ajax({
-            url: '/hotlinks/ajax/rate/' + nodeId,
-            method: 'POST',
-            data: {
-              rating: rating,
-              _token: $widget.data('csrf-token')
-            },
-            success: function (response) {
-              if (response.status === 'success') {
-                // Update average rating display if present
-                var $avgDisplay = $('.field--name-field-hotlink-avg-rating');
-                if ($avgDisplay.length && response.newAverageHtml) {
-                  $avgDisplay.find('.hotlinks-rating-stars').replaceWith(response.newAverageHtml);
-                }
-                
-                // Show success message
-                Drupal.announce('Rating saved successfully');
-                
-                // Flash the widget briefly
-                $widget.addClass('success-flash');
-                setTimeout(function () {
-                  $widget.removeClass('success-flash');
-                }, 1000);
-              } else {
-                Drupal.announce('Error saving rating: ' + response.message);
-              }
-            },
-            error: function () {
-              Drupal.announce('Error saving rating. Please try again.');
-            },
-            complete: function () {
-              $widget.removeClass('loading').attr('aria-busy', 'false');
+          try {
+            // Get security token
+            const token = await getSecurityToken('rate', nodeId);
+            if (!token) {
+              throw new Error('Failed to obtain security token');
             }
-          });
+            
+            // Prepare form data
+            const formData = new FormData();
+            formData.append('rating', rating.toString());
+            formData.append('token', token);
+            
+            const response = await fetch(`/hotlinks/ajax/rate/${nodeId}`, {
+              method: 'POST',
+              body: formData,
+              credentials: 'same-origin',
+              headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+              }
+            });
+            
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+              // Update average rating display if present
+              const $avgDisplay = $('.field--name-field-hotlink-avg-rating');
+              if ($avgDisplay.length && data.data && data.data.newAverage) {
+                // Safely update the display
+                $avgDisplay.find('.rating-number').text(data.data.newAverage.toFixed(1));
+                
+                // Update review count if present
+                if (data.data.reviewCount) {
+                  $avgDisplay.find('.rating-count').text(data.data.reviewCount);
+                }
+              }
+              
+              // Show success message
+              Drupal.announce(data.message || 'Rating saved successfully');
+              
+              // Flash the widget briefly
+              $widget.addClass('success-flash');
+              setTimeout(function () {
+                $widget.removeClass('success-flash');
+              }, 1000);
+              
+            } else {
+              throw new Error(data.message || 'Unknown error occurred');
+            }
+            
+          } catch (error) {
+            console.error('Rating submission error:', error);
+            
+            // Show user-friendly error message
+            let errorMessage = 'Error saving rating. Please try again.';
+            if (error.message && error.message.includes('token')) {
+              errorMessage = 'Security error. Please refresh the page and try again.';
+            }
+            
+            Drupal.announce(errorMessage);
+            
+            // Reset the widget to previous state if needed
+            // (Implementation depends on how you want to handle failures)
+            
+          } finally {
+            $widget.removeClass('loading').attr('aria-busy', 'false');
+          }
+        });
+      });
+    }
+  };
+
+  /**
+   * AJAX review submission with enhanced security.
+   */
+  Drupal.behaviors.hotlinksAjaxReviews = {
+    attach: function (context, settings) {
+      once('ajax-review-form', '.hotlinks-review-form', context).forEach(function (element) {
+        var $form = $(element);
+        
+        $form.on('submit', async function (e) {
+          e.preventDefault();
+          
+          var nodeId = $form.data('node-id');
+          var $reviewField = $form.find('[name="review"]');
+          var $ratingField = $form.find('[name="rating"]');
+          var $submitButton = $form.find('[type="submit"]');
+          
+          if (!nodeId) {
+            console.error('No node ID found for review form');
+            return;
+          }
+          
+          // Get and validate form data
+          var reviewText = sanitizeInput($reviewField.val().trim());
+          var rating = $ratingField.val();
+          
+          // Client-side validation
+          if (reviewText.length < 10) {
+            Drupal.announce('Review text must be at least 10 characters long.');
+            $reviewField.focus();
+            return;
+          }
+          
+          if (reviewText.length > 2000) {
+            Drupal.announce('Review text is too long. Maximum 2000 characters.');
+            $reviewField.focus();
+            return;
+          }
+          
+          if (rating && !validateRating(rating)) {
+            Drupal.announce('Please select a valid rating (1-5 stars).');
+            return;
+          }
+          
+          // Show loading state
+          $submitButton.prop('disabled', true).text('Submitting...');
+          $form.addClass('loading');
+          
+          try {
+            // Get security token
+            const token = await getSecurityToken('review', nodeId);
+            if (!token) {
+              throw new Error('Failed to obtain security token');
+            }
+            
+            // Prepare form data
+            const formData = new FormData();
+            formData.append('review', reviewText);
+            if (rating) {
+              formData.append('rating', rating.toString());
+            }
+            formData.append('token', token);
+            
+            const response = await fetch(`/hotlinks/ajax/review/${nodeId}`, {
+              method: 'POST',
+              body: formData,
+              credentials: 'same-origin',
+              headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+              }
+            });
+            
+            if (!response.ok) {
+              throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+              // Show success message
+              Drupal.announce(data.message || 'Review submitted successfully');
+              
+              // Clear form
+              $reviewField.val('');
+              $ratingField.val('');
+              
+              // Show moderation notice if needed
+              if (data.data && data.data.needsModeration) {
+                $form.after('<div class="messages messages--warning" role="alert">' + 
+                  'Your review has been submitted and is pending moderation.' + 
+                  '</div>');
+              }
+              
+            } else {
+              throw new Error(data.message || 'Unknown error occurred');
+            }
+            
+          } catch (error) {
+            console.error('Review submission error:', error);
+            
+            // Show user-friendly error message
+            let errorMessage = 'Error submitting review. Please try again.';
+            if (error.message && error.message.includes('token')) {
+              errorMessage = 'Security error. Please refresh the page and try again.';
+            } else if (error.message && error.message.includes('rate limit')) {
+              errorMessage = 'Too many submissions. Please wait before submitting another review.';
+            }
+            
+            Drupal.announce(errorMessage);
+            
+          } finally {
+            // Reset loading state
+            $submitButton.prop('disabled', false).text('Submit Review');
+            $form.removeClass('loading');
+          }
         });
       });
     }
@@ -279,6 +518,53 @@
           setTimeout(function () {
             $fill.css('width', width + '%');
           }, 200);
+        });
+      });
+    }
+  };
+
+  /**
+   * Security enhancement: Clear sensitive data on page unload.
+   */
+  $(window).on('beforeunload', function() {
+    // Clear token cache to prevent memory leaks
+    tokenCache = {};
+    
+    // Clear any sensitive form data
+    $('.hotlinks-review-form').each(function() {
+      $(this).find('input, textarea').val('');
+    });
+  });
+
+  /**
+   * Security enhancement: Rate limiting feedback.
+   */
+  Drupal.behaviors.hotlinksRateLimitFeedback = {
+    attach: function (context, settings) {
+      // Track submission attempts for client-side rate limiting feedback
+      var submissionCount = 0;
+      var submissionTimes = [];
+      var maxSubmissions = 5;
+      var timeWindow = 5 * 60 * 1000; // 5 minutes
+      
+      once('rate-limit-tracking', '.hotlinks-rating-widget, .hotlinks-review-form', context).forEach(function (element) {
+        var $element = $(element);
+        
+        $element.on('ratingChanged submit', function() {
+          var currentTime = Date.now();
+          
+          // Clean old submissions
+          submissionTimes = submissionTimes.filter(function(time) {
+            return (currentTime - time) < timeWindow;
+          });
+          
+          // Add current submission
+          submissionTimes.push(currentTime);
+          
+          // Check if approaching rate limit
+          if (submissionTimes.length >= maxSubmissions - 1) {
+            Drupal.announce('You are approaching the submission limit. Please wait before submitting more ratings or reviews.');
+          }
         });
       });
     }
