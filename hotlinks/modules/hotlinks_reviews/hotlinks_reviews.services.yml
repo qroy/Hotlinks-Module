@@ -1,0 +1,6 @@
+services:
+  hotlinks_reviews.service:
+    class: Drupal\hotlinks_reviews\Service\HotlinksReviewsService
+    arguments: ['@database', '@current_user', '@config.factory', '@entity_type.manager']
+    tags:
+      - { name: service }

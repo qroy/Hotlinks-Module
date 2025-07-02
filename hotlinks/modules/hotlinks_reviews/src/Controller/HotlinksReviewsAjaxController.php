@@ -6,12 +6,13 @@ use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Access\CsrfTokenGenerator;
 use Drupal\Component\Utility\Html;
 use Drupal\node\NodeInterface;
+use Drupal\hotlinks_reviews\Service\HotlinksReviewsService;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
- * AJAX controller for Hotlinks Reviews with enhanced security.
+ * AJAX controller for Hotlinks Reviews using proper database service.
  */
 class HotlinksReviewsAjaxController extends ControllerBase {
 
@@ -23,13 +24,23 @@ class HotlinksReviewsAjaxController extends ControllerBase {
   protected $csrfToken;
 
   /**
+   * The hotlinks reviews service.
+   *
+   * @var \Drupal\hotlinks_reviews\Service\HotlinksReviewsService
+   */
+  protected $reviewsService;
+
+  /**
    * Constructs a new HotlinksReviewsAjaxController object.
    *
    * @param \Drupal\Core\Access\CsrfTokenGenerator $csrf_token
    *   The CSRF token generator.
+   * @param \Drupal\hotlinks_reviews\Service\HotlinksReviewsService $reviews_service
+   *   The reviews service.
    */
-  public function __construct(CsrfTokenGenerator $csrf_token) {
+  public function __construct(CsrfTokenGenerator $csrf_token, HotlinksReviewsService $reviews_service) {
     $this->csrfToken = $csrf_token;
+    $this->reviewsService = $reviews_service;
   }
 
   /**
@@ -37,7 +48,8 @@ class HotlinksReviewsAjaxController extends ControllerBase {
    */
   public static function create(ContainerInterface $container) {
     return new static(
-      $container->get('csrf_token')
+      $container->get('csrf_token'),
+      $container->get('hotlinks_reviews.service')
     );
   }
 
@@ -87,56 +99,19 @@ class HotlinksReviewsAjaxController extends ControllerBase {
       ], 400);
     }
 
-    // Check if user can rate (not anonymous unless allowed)
-    $config = \Drupal::config('hotlinks.settings');
-    if ($this->currentUser()->isAnonymous() && !$config->get('allow_anonymous_reviews')) {
-      return new JsonResponse([
-        'status' => 'error', 
-        'message' => $this->t('You must be logged in to rate links.')
-      ], 403);
-    }
-
-    // Check if user has already rated and updates are not allowed
-    $user_id = $this->currentUser()->id();
-    if (!$config->get('allow_review_updates') && $this->getUserRating($node->id(), $user_id)) {
-      return new JsonResponse([
-        'status' => 'error', 
-        'message' => $this->t('You have already rated this link.')
-      ], 400);
-    }
-
     try {
-      // Save rating to state (temporary - will be replaced with proper DB)
-      $ratings = \Drupal::state()->get('hotlinks_reviews.ratings', []);
-      $ratings[$node->id()][$user_id] = [
-        'rating' => $rating,
-        'timestamp' => \Drupal::time()->getRequestTime(),
-        'ip_address' => $request->getClientIp(), // For abuse prevention
-      ];
-      \Drupal::state()->set('hotlinks_reviews.ratings', $ratings);
-      
-      // Recalculate average
-      $total = 0;
-      $count = 0;
-      foreach ($ratings[$node->id()] as $user_rating) {
-        $total += $user_rating['rating'];
-        $count++;
-      }
-      $average = $count > 0 ? round($total / $count, 2) : 0;
-      
-      // Update node safely
-      if ($node->hasField('field_hotlink_avg_rating')) {
-        $node->set('field_hotlink_avg_rating', $average);
-      }
-      if ($node->hasField('field_hotlink_review_count')) {
-        $node->set('field_hotlink_review_count', $count);
-      }
-      $node->save();
+      // Use the service to submit the rating
+      $result = $this->reviewsService->submitRating(
+        $node->id(),
+        $rating,
+        $request->getClientIp(),
+        $this->currentUser()->id()
+      );
 
       // Log activity for security monitoring
       \Drupal::logger('hotlinks_reviews')->info('User @user (ID: @uid) rated hotlink "@title" (@rating stars) from IP @ip', [
         '@user' => $this->currentUser()->getDisplayName(),
-        '@uid' => $user_id,
+        '@uid' => $this->currentUser()->id(),
         '@title' => $node->getTitle(),
         '@rating' => $rating,
         '@ip' => $request->getClientIp(),
@@ -145,24 +120,34 @@ class HotlinksReviewsAjaxController extends ControllerBase {
       return new JsonResponse([
         'status' => 'success',
         'message' => $this->t('Rating saved successfully.'),
-        'data' => [
-          'newAverage' => $average,
-          'reviewCount' => $count,
-          'userRating' => $rating,
-        ],
+        'data' => $result['data'],
       ]);
+
+    } catch (\InvalidArgumentException $e) {
+      return new JsonResponse([
+        'status' => 'error', 
+        'message' => $this->t('@error', ['@error' => $e->getMessage()])
+      ], 400);
 
     } catch (\Exception $e) {
       \Drupal::logger('hotlinks_reviews')->error('Error saving rating for node @nid by user @uid: @message', [
         '@nid' => $node->id(),
-        '@uid' => $user_id,
+        '@uid' => $this->currentUser()->id(),
         '@message' => $e->getMessage()
       ]);
       
+      // Don't expose internal errors to users
+      $message = $this->t('Unable to save rating. Please try again.');
+      if (strpos($e->getMessage(), 'Rate limit') !== FALSE) {
+        $message = $this->t('You are submitting too frequently. Please wait before rating again.');
+      } elseif (strpos($e->getMessage(), 'already exists') !== FALSE) {
+        $message = $this->t('You have already rated this link.');
+      }
+      
       return new JsonResponse([
         'status' => 'error', 
-        'message' => $this->t('Unable to save rating. Please try again.')
-      ], 500);
+        'message' => $message
+      ], 429);
     }
   }
 
@@ -204,7 +189,7 @@ class HotlinksReviewsAjaxController extends ControllerBase {
       ], 400);
     }
 
-    $review_text = Html::escape(trim($review_input));
+    $review_text = trim($review_input);
     if (empty($review_text)) {
       return new JsonResponse([
         'status' => 'error', 
@@ -212,24 +197,9 @@ class HotlinksReviewsAjaxController extends ControllerBase {
       ], 400);
     }
 
-    // Check review length limits
-    if (strlen($review_text) > 2000) {
-      return new JsonResponse([
-        'status' => 'error', 
-        'message' => $this->t('Review text is too long. Maximum 2000 characters.')
-      ], 400);
-    }
-
-    if (strlen($review_text) < 10) {
-      return new JsonResponse([
-        'status' => 'error', 
-        'message' => $this->t('Review text is too short. Minimum 10 characters.')
-      ], 400);
-    }
-
     // Validate rating if provided
     $rating_input = $request->request->get('rating');
-    $rating = 0;
+    $rating = NULL;
     if (!empty($rating_input)) {
       if (!is_numeric($rating_input)) {
         return new JsonResponse([
@@ -247,72 +217,68 @@ class HotlinksReviewsAjaxController extends ControllerBase {
       }
     }
 
-    // Check if user can review (not anonymous unless allowed)
-    $config = \Drupal::config('hotlinks.settings');
-    if ($this->currentUser()->isAnonymous() && !$config->get('allow_anonymous_reviews')) {
-      return new JsonResponse([
-        'status' => 'error', 
-        'message' => $this->t('You must be logged in to review links.')
-      ], 403);
-    }
-
-    // Rate limiting check - prevent spam
-    $user_id = $this->currentUser()->id();
-    $ip_address = $request->getClientIp();
-    if ($this->isRateLimited($user_id, $ip_address)) {
-      return new JsonResponse([
-        'status' => 'error', 
-        'message' => $this->t('Too many reviews submitted. Please wait before submitting another.')
-      ], 429);
+    // Get optional review title
+    $review_title = $request->request->get('title');
+    if ($review_title && !is_string($review_title)) {
+      $review_title = NULL;
     }
 
     try {
-      // Save review to state (temporary - will be replaced with proper DB)
-      $reviews = \Drupal::state()->get('hotlinks_reviews.reviews', []);
-      $reviews[$node->id()][$user_id] = [
-        'review' => $review_text,
-        'rating' => $rating,
-        'timestamp' => \Drupal::time()->getRequestTime(),
-        'user_name' => Html::escape($this->currentUser()->getDisplayName()),
-        'ip_address' => $ip_address,
-        'status' => $config->get('moderate_reviews') ? 'pending' : 'approved',
-      ];
-      \Drupal::state()->set('hotlinks_reviews.reviews', $reviews);
-
-      // Update rate limiting tracking
-      $this->updateRateLimit($user_id, $ip_address);
+      // Use the service to submit the review
+      $result = $this->reviewsService->submitReview(
+        $node->id(),
+        $review_text,
+        $request->getClientIp(),
+        $rating,
+        $review_title,
+        $this->currentUser()->id()
+      );
 
       // Log activity for security monitoring
       \Drupal::logger('hotlinks_reviews')->info('User @user (ID: @uid) submitted review for hotlink "@title" from IP @ip', [
         '@user' => $this->currentUser()->getDisplayName(),
-        '@uid' => $user_id,
+        '@uid' => $this->currentUser()->id(),
         '@title' => $node->getTitle(),
-        '@ip' => $ip_address,
+        '@ip' => $request->getClientIp(),
       ]);
 
-      $message = $config->get('moderate_reviews') ? 
+      $message = $result['data']['needsModeration'] ? 
         $this->t('Review submitted and is pending moderation.') :
         $this->t('Review saved successfully.');
 
       return new JsonResponse([
         'status' => 'success',
         'message' => $message,
-        'data' => [
-          'needsModeration' => (bool) $config->get('moderate_reviews'),
-        ],
+        'data' => $result['data'],
       ]);
+
+    } catch (\InvalidArgumentException $e) {
+      return new JsonResponse([
+        'status' => 'error', 
+        'message' => $this->t('@error', ['@error' => $e->getMessage()])
+      ], 400);
 
     } catch (\Exception $e) {
       \Drupal::logger('hotlinks_reviews')->error('Error saving review for node @nid by user @uid: @message', [
         '@nid' => $node->id(),
-        '@uid' => $user_id,
+        '@uid' => $this->currentUser()->id(),
         '@message' => $e->getMessage()
       ]);
       
+      // Don't expose internal errors to users
+      $message = $this->t('Unable to save review. Please try again.');
+      if (strpos($e->getMessage(), 'Rate limit') !== FALSE) {
+        $message = $this->t('You are submitting too frequently. Please wait before submitting another review.');
+      } elseif (strpos($e->getMessage(), 'already exists') !== FALSE) {
+        $message = $this->t('You have already reviewed this link.');
+      } elseif (strpos($e->getMessage(), 'spam') !== FALSE) {
+        $message = $this->t('Review appears to contain spam. Please revise your review.');
+      }
+      
       return new JsonResponse([
         'status' => 'error', 
-        'message' => $this->t('Unable to save review. Please try again.')
-      ], 500);
+        'message' => $message
+      ], 429);
     }
   }
 
@@ -342,89 +308,219 @@ class HotlinksReviewsAjaxController extends ControllerBase {
   }
 
   /**
-   * Get user's existing rating for a node.
+   * Get rating and review data for a node.
    */
-  private function getUserRating($node_id, $user_id) {
-    $ratings = \Drupal::state()->get('hotlinks_reviews.ratings', []);
-    
-    if (isset($ratings[$node_id][$user_id])) {
-      return $ratings[$node_id][$user_id]['rating'];
+  public function getNodeData(NodeInterface $node, Request $request) {
+    // Validate node type
+    if ($node->bundle() !== 'hotlink') {
+      return new JsonResponse([
+        'status' => 'error', 
+        'message' => $this->t('Invalid content type.')
+      ], 400);
     }
-    
-    return NULL;
+
+    // Check permissions
+    if (!$this->currentUser()->hasPermission('view hotlink ratings')) {
+      return new JsonResponse([
+        'status' => 'error', 
+        'message' => $this->t('Access denied.')
+      ], 403);
+    }
+
+    try {
+      // Get statistics
+      $stats = $this->reviewsService->getNodeStatistics($node->id());
+      
+      // Get user's existing rating/review if logged in
+      $user_rating = NULL;
+      $user_review = NULL;
+      
+      if ($this->currentUser()->isAuthenticated()) {
+        $user_rating = $this->reviewsService->getUserRating($node->id());
+        $user_review = $this->reviewsService->getUserReview($node->id());
+      }
+      
+      // Get rating breakdown
+      $rating_breakdown = $this->reviewsService->getRatingBreakdown($node->id());
+      
+      // Get recent reviews (limit to prevent large responses)
+      $reviews = $this->reviewsService->getNodeReviews($node->id(), 5);
+      
+      return new JsonResponse([
+        'status' => 'success',
+        'data' => [
+          'statistics' => $stats,
+          'rating_breakdown' => $rating_breakdown,
+          'user_rating' => $user_rating,
+          'user_review' => $user_review,
+          'recent_reviews' => $reviews,
+        ],
+      ]);
+
+    } catch (\Exception $e) {
+      \Drupal::logger('hotlinks_reviews')->error('Error getting node data for @nid: @message', [
+        '@nid' => $node->id(),
+        '@message' => $e->getMessage()
+      ]);
+      
+      return new JsonResponse([
+        'status' => 'error', 
+        'message' => $this->t('Unable to load review data.')
+      ], 500);
+    }
   }
 
   /**
-   * Check if user/IP is rate limited.
+   * Get top-rated hotlinks.
    */
-  private function isRateLimited($user_id, $ip_address) {
-    $rate_limit_data = \Drupal::state()->get('hotlinks_reviews.rate_limits', []);
-    $current_time = time();
-    $rate_limit_window = 300; // 5 minutes
-    $max_submissions = 5; // Maximum submissions per window
-    
-    // Check user-based rate limiting
-    if ($user_id > 0) {
-      $user_key = 'user_' . $user_id;
-      if (isset($rate_limit_data[$user_key])) {
-        $submissions = array_filter($rate_limit_data[$user_key], function($timestamp) use ($current_time, $rate_limit_window) {
-          return ($current_time - $timestamp) < $rate_limit_window;
-        });
-        
-        if (count($submissions) >= $max_submissions) {
-          return TRUE;
-        }
-      }
+  public function getTopRated(Request $request) {
+    // Check permissions
+    if (!$this->currentUser()->hasPermission('access hotlinks')) {
+      return new JsonResponse([
+        'status' => 'error', 
+        'message' => $this->t('Access denied.')
+      ], 403);
     }
-    
-    // Check IP-based rate limiting
-    $ip_key = 'ip_' . $ip_address;
-    if (isset($rate_limit_data[$ip_key])) {
-      $submissions = array_filter($rate_limit_data[$ip_key], function($timestamp) use ($current_time, $rate_limit_window) {
-        return ($current_time - $timestamp) < $rate_limit_window;
-      });
+
+    try {
+      $limit = min((int) $request->query->get('limit', 10), 50); // Cap at 50
+      $min_rating = (float) $request->query->get('min_rating', 4.0);
+      $min_votes = (int) $request->query->get('min_votes', 3);
       
-      if (count($submissions) >= $max_submissions) {
-        return TRUE;
-      }
+      $top_rated = $this->reviewsService->getTopRatedHotlinks($limit, $min_rating, $min_votes);
+      
+      return new JsonResponse([
+        'status' => 'success',
+        'data' => $top_rated,
+      ]);
+
+    } catch (\Exception $e) {
+      \Drupal::logger('hotlinks_reviews')->error('Error getting top rated hotlinks: @message', [
+        '@message' => $e->getMessage()
+      ]);
+      
+      return new JsonResponse([
+        'status' => 'error', 
+        'message' => $this->t('Unable to load top-rated hotlinks.')
+      ], 500);
     }
-    
-    return FALSE;
   }
 
   /**
-   * Update rate limiting tracking.
+   * Moderate a review (admin only).
    */
-  private function updateRateLimit($user_id, $ip_address) {
-    $rate_limit_data = \Drupal::state()->get('hotlinks_reviews.rate_limits', []);
-    $current_time = time();
-    
-    // Track by user ID
-    if ($user_id > 0) {
-      $user_key = 'user_' . $user_id;
-      if (!isset($rate_limit_data[$user_key])) {
-        $rate_limit_data[$user_key] = [];
+  public function moderateReview(Request $request) {
+    // Check permissions
+    if (!$this->currentUser()->hasPermission('moderate hotlink reviews')) {
+      return new JsonResponse([
+        'status' => 'error', 
+        'message' => $this->t('Access denied.')
+      ], 403);
+    }
+
+    // Validate CSRF token
+    $token = $request->request->get('token');
+    if (!$this->csrfToken->validate($token, 'hotlinks_moderate')) {
+      return new JsonResponse([
+        'status' => 'error', 
+        'message' => $this->t('Invalid security token.')
+      ], 403);
+    }
+
+    $review_id = $request->request->get('review_id');
+    $status = $request->request->get('status');
+
+    // Validate inputs
+    if (!is_numeric($review_id) || $review_id <= 0) {
+      return new JsonResponse([
+        'status' => 'error', 
+        'message' => $this->t('Invalid review ID.')
+      ], 400);
+    }
+
+    if (!in_array($status, ['approved', 'rejected', 'spam'])) {
+      return new JsonResponse([
+        'status' => 'error', 
+        'message' => $this->t('Invalid status.')
+      ], 400);
+    }
+
+    try {
+      $result = $this->reviewsService->moderateReview(
+        (int) $review_id,
+        $status,
+        $this->currentUser()->id()
+      );
+
+      if ($result) {
+        // Log moderation activity
+        \Drupal::logger('hotlinks_reviews')->info('User @user moderated review @review_id to @status', [
+          '@user' => $this->currentUser()->getDisplayName(),
+          '@review_id' => $review_id,
+          '@status' => $status,
+        ]);
+
+        return new JsonResponse([
+          'status' => 'success',
+          'message' => $this->t('Review moderated successfully.'),
+          'data' => [
+            'review_id' => $review_id,
+            'new_status' => $status,
+          ],
+        ]);
+      } else {
+        throw new \Exception('Moderation failed');
       }
-      $rate_limit_data[$user_key][] = $current_time;
+
+    } catch (\Exception $e) {
+      \Drupal::logger('hotlinks_reviews')->error('Error moderating review @review_id: @message', [
+        '@review_id' => $review_id,
+        '@message' => $e->getMessage()
+      ]);
       
-      // Keep only recent entries (last 24 hours)
-      $rate_limit_data[$user_key] = array_filter($rate_limit_data[$user_key], function($timestamp) use ($current_time) {
-        return ($current_time - $timestamp) < 86400; // 24 hours
-      });
+      return new JsonResponse([
+        'status' => 'error', 
+        'message' => $this->t('Unable to moderate review.')
+      ], 500);
     }
-    
-    // Track by IP
-    $ip_key = 'ip_' . $ip_address;
-    if (!isset($rate_limit_data[$ip_key])) {
-      $rate_limit_data[$ip_key] = [];
+  }
+
+  /**
+   * Get pending reviews for moderation.
+   */
+  public function getPendingReviews(Request $request) {
+    // Check permissions
+    if (!$this->currentUser()->hasPermission('moderate hotlink reviews')) {
+      return new JsonResponse([
+        'status' => 'error', 
+        'message' => $this->t('Access denied.')
+      ], 403);
     }
-    $rate_limit_data[$ip_key][] = $current_time;
-    
-    // Keep only recent entries (last 24 hours)
-    $rate_limit_data[$ip_key] = array_filter($rate_limit_data[$ip_key], function($timestamp) use ($current_time) {
-      return ($current_time - $timestamp) < 86400; // 24 hours
-    });
-    
-    \Drupal::state()->set('hotlinks_reviews.rate_limits', $rate_limit_data);
+
+    try {
+      $limit = min((int) $request->query->get('limit', 20), 100); // Cap at 100
+      $offset = max((int) $request->query->get('offset', 0), 0);
+      
+      $pending_reviews = $this->reviewsService->getPendingReviews($limit, $offset);
+      
+      return new JsonResponse([
+        'status' => 'success',
+        'data' => [
+          'reviews' => $pending_reviews,
+          'limit' => $limit,
+          'offset' => $offset,
+        ],
+      ]);
+
+    } catch (\Exception $e) {
+      \Drupal::logger('hotlinks_reviews')->error('Error getting pending reviews: @message', [
+        '@message' => $e->getMessage()
+      ]);
+      
+      return new JsonResponse([
+        'status' => 'error', 
+        'message' => $this->t('Unable to load pending reviews.')
+      ], 500);
+    }
   }
 }

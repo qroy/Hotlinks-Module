@@ -3,12 +3,371 @@
 /**
  * @file
  * Install, update and uninstall functions for the Hotlinks Reviews submodule.
+ * Now includes proper database schema implementation.
  */
 
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\Core\Entity\Entity\EntityFormDisplay;
 use Drupal\Core\Entity\Entity\EntityViewDisplay;
+use Drupal\Core\Database\Database;
+
+/**
+ * Implements hook_schema().
+ */
+function hotlinks_reviews_schema() {
+  $schema = [];
+  
+  // Table for individual ratings
+  $schema['hotlinks_ratings'] = [
+    'description' => 'Stores individual user ratings for hotlinks',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'Primary Key: Unique rating ID',
+      ],
+      'node_id' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'The node ID of the hotlink being rated',
+      ],
+      'user_id' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The user ID who submitted the rating. 0 for anonymous users.',
+      ],
+      'rating' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'The rating value (1-5)',
+      ],
+      'ip_address' => [
+        'type' => 'varchar',
+        'length' => 45,
+        'not null' => FALSE,
+        'description' => 'IP address of the user (for spam prevention)',
+      ],
+      'created' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Unix timestamp when the rating was created',
+      ],
+      'updated' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Unix timestamp when the rating was last updated',
+      ],
+    ],
+    'primary key' => ['id'],
+    'unique keys' => [
+      'user_node_rating' => ['node_id', 'user_id'],
+    ],
+    'indexes' => [
+      'node_id' => ['node_id'],
+      'user_id' => ['user_id'],
+      'rating' => ['rating'],
+      'created' => ['created'],
+      'ip_address' => ['ip_address'],
+    ],
+    'foreign keys' => [
+      'rated_node' => [
+        'table' => 'node',
+        'columns' => ['node_id' => 'nid'],
+      ],
+      'rating_user' => [
+        'table' => 'users',
+        'columns' => ['user_id' => 'uid'],
+      ],
+    ],
+  ];
+  
+  // Table for reviews
+  $schema['hotlinks_reviews'] = [
+    'description' => 'Stores user reviews for hotlinks',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'Primary Key: Unique review ID',
+      ],
+      'node_id' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'The node ID of the hotlink being reviewed',
+      ],
+      'user_id' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The user ID who submitted the review. 0 for anonymous users.',
+      ],
+      'rating_id' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+        'description' => 'Optional reference to associated rating',
+      ],
+      'review_text' => [
+        'type' => 'text',
+        'size' => 'normal',
+        'not null' => TRUE,
+        'description' => 'The review text content',
+      ],
+      'review_title' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => FALSE,
+        'description' => 'Optional review title',
+      ],
+      'status' => [
+        'type' => 'varchar',
+        'length' => 20,
+        'not null' => TRUE,
+        'default' => 'pending',
+        'description' => 'Review status: pending, approved, rejected, spam',
+      ],
+      'user_name' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => FALSE,
+        'description' => 'Display name for the reviewer (cached for performance)',
+      ],
+      'ip_address' => [
+        'type' => 'varchar',
+        'length' => 45,
+        'not null' => FALSE,
+        'description' => 'IP address of the user (for spam prevention)',
+      ],
+      'user_agent' => [
+        'type' => 'text',
+        'size' => 'normal',
+        'not null' => FALSE,
+        'description' => 'User agent string (for spam detection)',
+      ],
+      'created' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Unix timestamp when the review was created',
+      ],
+      'updated' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Unix timestamp when the review was last updated',
+      ],
+      'moderated_by' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+        'description' => 'User ID of the moderator who approved/rejected the review',
+      ],
+      'moderated_at' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+        'description' => 'Unix timestamp when the review was moderated',
+      ],
+    ],
+    'primary key' => ['id'],
+    'unique keys' => [
+      'user_node_review' => ['node_id', 'user_id'],
+    ],
+    'indexes' => [
+      'node_id' => ['node_id'],
+      'user_id' => ['user_id'],
+      'status' => ['status'],
+      'created' => ['created'],
+      'ip_address' => ['ip_address'],
+      'rating_id' => ['rating_id'],
+    ],
+    'foreign keys' => [
+      'reviewed_node' => [
+        'table' => 'node',
+        'columns' => ['node_id' => 'nid'],
+      ],
+      'review_user' => [
+        'table' => 'users',
+        'columns' => ['user_id' => 'uid'],
+      ],
+      'associated_rating' => [
+        'table' => 'hotlinks_ratings',
+        'columns' => ['rating_id' => 'id'],
+      ],
+      'moderator_user' => [
+        'table' => 'users',
+        'columns' => ['moderated_by' => 'uid'],
+      ],
+    ],
+  ];
+  
+  // Table for rate limiting tracking
+  $schema['hotlinks_rate_limits'] = [
+    'description' => 'Tracks submission frequency for rate limiting',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'Primary Key: Unique submission ID',
+      ],
+      'user_id' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'The user ID. 0 for anonymous users.',
+      ],
+      'ip_address' => [
+        'type' => 'varchar',
+        'length' => 45,
+        'not null' => TRUE,
+        'description' => 'IP address of the submission',
+      ],
+      'action_type' => [
+        'type' => 'varchar',
+        'length' => 20,
+        'not null' => TRUE,
+        'description' => 'Type of action: rating, review',
+      ],
+      'node_id' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+        'description' => 'Optional node ID for context',
+      ],
+      'created' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Unix timestamp of the submission',
+      ],
+    ],
+    'primary key' => ['id'],
+    'indexes' => [
+      'user_id' => ['user_id'],
+      'ip_address' => ['ip_address'],
+      'action_type' => ['action_type'],
+      'created' => ['created'],
+      'user_action_time' => ['user_id', 'action_type', 'created'],
+      'ip_action_time' => ['ip_address', 'action_type', 'created'],
+    ],
+  ];
+  
+  // Table for aggregated statistics (for performance)
+  $schema['hotlinks_statistics'] = [
+    'description' => 'Stores aggregated rating statistics for hotlinks',
+    'fields' => [
+      'node_id' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'The node ID of the hotlink',
+      ],
+      'total_ratings' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Total number of ratings',
+      ],
+      'total_reviews' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Total number of approved reviews',
+      ],
+      'average_rating' => [
+        'type' => 'numeric',
+        'precision' => 3,
+        'scale' => 2,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Calculated average rating',
+      ],
+      'rating_sum' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Sum of all ratings (for efficient recalculation)',
+      ],
+      'rating_1_count' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Count of 1-star ratings',
+      ],
+      'rating_2_count' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Count of 2-star ratings',
+      ],
+      'rating_3_count' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Count of 3-star ratings',
+      ],
+      'rating_4_count' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Count of 4-star ratings',
+      ],
+      'rating_5_count' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Count of 5-star ratings',
+      ],
+      'last_updated' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Unix timestamp when statistics were last updated',
+      ],
+    ],
+    'primary key' => ['node_id'],
+    'indexes' => [
+      'average_rating' => ['average_rating'],
+      'total_ratings' => ['total_ratings'],
+      'last_updated' => ['last_updated'],
+    ],
+    'foreign keys' => [
+      'statistics_node' => [
+        'table' => 'node',
+        'columns' => ['node_id' => 'nid'],
+      ],
+    ],
+  ];
+  
+  return $schema;
+}
 
 /**
  * Implements hook_install().
@@ -51,16 +410,54 @@ function hotlinks_reviews_install() {
     // Add configuration
     _hotlinks_reviews_add_config();
 
+    // Initialize statistics for existing hotlinks
+    _hotlinks_reviews_initialize_statistics();
+
     // Clear caches
     \Drupal::entityTypeManager()->clearCachedDefinitions();
     \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
 
-    \Drupal::messenger()->addMessage(t('Hotlinks Reviews installed successfully! You can now rate and review hotlinks.'));
+    \Drupal::messenger()->addMessage(t('Hotlinks Reviews installed successfully with proper database schema! You can now rate and review hotlinks.'));
 
   } catch (\Exception $e) {
     \Drupal::logger('hotlinks_reviews')->error('Error during Hotlinks Reviews installation: @message', ['@message' => $e->getMessage()]);
     throw new \Exception('Failed to install Hotlinks Reviews: ' . $e->getMessage());
   }
+}
+
+/**
+ * Initialize statistics table for existing hotlinks.
+ */
+function _hotlinks_reviews_initialize_statistics() {
+  $connection = \Drupal::database();
+  
+  // Get all existing hotlink nodes
+  $query = \Drupal::entityQuery('node')
+    ->condition('type', 'hotlink')
+    ->accessCheck(FALSE);
+  $nids = $query->execute();
+  
+  foreach ($nids as $nid) {
+    // Insert initial statistics record
+    $connection->merge('hotlinks_statistics')
+      ->key(['node_id' => $nid])
+      ->fields([
+        'node_id' => $nid,
+        'total_ratings' => 0,
+        'total_reviews' => 0,
+        'average_rating' => 0,
+        'rating_sum' => 0,
+        'rating_1_count' => 0,
+        'rating_2_count' => 0,
+        'rating_3_count' => 0,
+        'rating_4_count' => 0,
+        'rating_5_count' => 0,
+        'last_updated' => \Drupal::time()->getRequestTime(),
+      ])
+      ->execute();
+  }
+  
+  \Drupal::logger('hotlinks_reviews')->info('Initialized statistics for @count hotlinks', ['@count' => count($nids)]);
 }
 
 /**
@@ -339,6 +736,21 @@ function _hotlinks_reviews_add_config() {
   if ($config->get('starfleet_approval') === NULL) {
     $config->set('starfleet_approval', TRUE);
   }
+  if ($config->get('rate_limit_submissions') === NULL) {
+    $config->set('rate_limit_submissions', 5);
+  }
+  if ($config->get('rate_limit_window') === NULL) {
+    $config->set('rate_limit_window', 300);
+  }
+  if ($config->get('max_review_length') === NULL) {
+    $config->set('max_review_length', 2000);
+  }
+  if ($config->get('min_review_length') === NULL) {
+    $config->set('min_review_length', 10);
+  }
+  if ($config->get('enable_spam_detection') === NULL) {
+    $config->set('enable_spam_detection', TRUE);
+  }
   
   $config->save();
   \Drupal::logger('hotlinks_reviews')->info('Added reviews configuration settings');
@@ -400,14 +812,221 @@ function hotlinks_reviews_uninstall() {
     ->clear('min_rating_for_display')
     ->clear('use_star_trek_labels')
     ->clear('starfleet_approval')
+    ->clear('rate_limit_submissions')
+    ->clear('rate_limit_window')
+    ->clear('max_review_length')
+    ->clear('min_review_length')
+    ->clear('enable_spam_detection')
     ->save();
 
-  // Clear review data from state
+  // Clear legacy state data (if any remains)
   \Drupal::state()->delete('hotlinks_reviews.ratings');
   \Drupal::state()->delete('hotlinks_reviews.reviews');
   \Drupal::state()->delete('hotlinks_reviews.starfleet_approved');
+  \Drupal::state()->delete('hotlinks_reviews.rate_limits');
 
   \Drupal::messenger()->addMessage(t('Hotlinks Reviews uninstalled. All rating and review data has been removed.'));
+}
+
+/**
+ * Migrate data from state storage to database tables.
+ */
+function hotlinks_reviews_update_8100() {
+  $connection = \Drupal::database();
+  $migrated_ratings = 0;
+  $migrated_reviews = 0;
+  
+  try {
+    // Migrate ratings from state to database
+    $ratings_data = \Drupal::state()->get('hotlinks_reviews.ratings', []);
+    
+    foreach ($ratings_data as $node_id => $user_ratings) {
+      foreach ($user_ratings as $user_id => $rating_data) {
+        // Validate the data before migration
+        if (!is_numeric($rating_data['rating']) || $rating_data['rating'] < 1 || $rating_data['rating'] > 5) {
+          continue;
+        }
+        
+        try {
+          $connection->insert('hotlinks_ratings')
+            ->fields([
+              'node_id' => (int) $node_id,
+              'user_id' => (int) $user_id,
+              'rating' => (int) $rating_data['rating'],
+              'ip_address' => isset($rating_data['ip_address']) ? substr($rating_data['ip_address'], 0, 45) : NULL,
+              'created' => isset($rating_data['timestamp']) ? (int) $rating_data['timestamp'] : time(),
+              'updated' => isset($rating_data['timestamp']) ? (int) $rating_data['timestamp'] : time(),
+            ])
+            ->execute();
+          $migrated_ratings++;
+        } catch (\Exception $e) {
+          // Skip duplicate or invalid entries
+          \Drupal::logger('hotlinks_reviews')->warning('Failed to migrate rating for node @node user @user: @error', [
+            '@node' => $node_id,
+            '@user' => $user_id,
+            '@error' => $e->getMessage(),
+          ]);
+        }
+      }
+    }
+    
+    // Migrate reviews from state to database
+    $reviews_data = \Drupal::state()->get('hotlinks_reviews.reviews', []);
+    
+    foreach ($reviews_data as $node_id => $user_reviews) {
+      foreach ($user_reviews as $user_id => $review_data) {
+        // Validate the data before migration
+        if (empty($review_data['review']) || strlen($review_data['review']) < 10) {
+          continue;
+        }
+        
+        try {
+          $connection->insert('hotlinks_reviews')
+            ->fields([
+              'node_id' => (int) $node_id,
+              'user_id' => (int) $user_id,
+              'review_text' => substr($review_data['review'], 0, 65535), // Ensure it fits in TEXT field
+              'status' => isset($review_data['status']) ? $review_data['status'] : 'approved',
+              'user_name' => isset($review_data['user_name']) ? substr($review_data['user_name'], 0, 255) : NULL,
+              'ip_address' => isset($review_data['ip_address']) ? substr($review_data['ip_address'], 0, 45) : NULL,
+              'created' => isset($review_data['timestamp']) ? (int) $review_data['timestamp'] : time(),
+              'updated' => isset($review_data['timestamp']) ? (int) $review_data['timestamp'] : time(),
+            ])
+            ->execute();
+          $migrated_reviews++;
+        } catch (\Exception $e) {
+          // Skip duplicate or invalid entries
+          \Drupal::logger('hotlinks_reviews')->warning('Failed to migrate review for node @node user @user: @error', [
+            '@node' => $node_id,
+            '@user' => $user_id,
+            '@error' => $e->getMessage(),
+          ]);
+        }
+      }
+    }
+    
+    // Recalculate statistics for all nodes
+    _hotlinks_reviews_recalculate_all_statistics();
+    
+    // Clear old state data after successful migration
+    \Drupal::state()->delete('hotlinks_reviews.ratings');
+    \Drupal::state()->delete('hotlinks_reviews.reviews');
+    \Drupal::state()->delete('hotlinks_reviews.rate_limits');
+    
+    return t('Successfully migrated @ratings ratings and @reviews reviews to database tables.', [
+      '@ratings' => $migrated_ratings,
+      '@reviews' => $migrated_reviews,
+    ]);
+    
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks_reviews')->error('Error during data migration: @error', ['@error' => $e->getMessage()]);
+    throw new \Exception('Failed to migrate review data: ' . $e->getMessage());
+  }
+}
+
+/**
+ * Recalculate statistics for all hotlinks.
+ */
+function _hotlinks_reviews_recalculate_all_statistics() {
+  $connection = \Drupal::database();
+  
+  // Get all nodes with ratings or reviews
+  $query = $connection->select('hotlinks_ratings', 'r')
+    ->fields('r', ['node_id'])
+    ->distinct();
+  $node_ids = $query->execute()->fetchCol();
+  
+  // Also include nodes with reviews but no ratings
+  $query = $connection->select('hotlinks_reviews', 'rv')
+    ->fields('rv', ['node_id'])
+    ->distinct();
+  $review_node_ids = $query->execute()->fetchCol();
+  
+  // Merge and deduplicate
+  $all_node_ids = array_unique(array_merge($node_ids, $review_node_ids));
+  
+  foreach ($all_node_ids as $node_id) {
+    _hotlinks_reviews_update_node_statistics((int) $node_id);
+  }
+  
+  \Drupal::logger('hotlinks_reviews')->info('Recalculated statistics for @count nodes', ['@count' => count($all_node_ids)]);
+}
+
+/**
+ * Update statistics for a specific node.
+ */
+function _hotlinks_reviews_update_node_statistics($node_id) {
+  $connection = \Drupal::database();
+  
+  // Calculate rating statistics
+  $rating_query = $connection->select('hotlinks_ratings', 'r')
+    ->condition('r.node_id', $node_id);
+  $rating_query->addExpression('COUNT(*)', 'total_ratings');
+  $rating_query->addExpression('SUM(rating)', 'rating_sum');
+  $rating_query->addExpression('AVG(rating)', 'average_rating');
+  $rating_query->addExpression('SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END)', 'rating_1_count');
+  $rating_query->addExpression('SUM(CASE WHEN rating = 2 THEN 1 ELSE 0 END)', 'rating_2_count');
+  $rating_query->addExpression('SUM(CASE WHEN rating = 3 THEN 1 ELSE 0 END)', 'rating_3_count');
+  $rating_query->addExpression('SUM(CASE WHEN rating = 4 THEN 1 ELSE 0 END)', 'rating_4_count');
+  $rating_query->addExpression('SUM(CASE WHEN rating = 5 THEN 1 ELSE 0 END)', 'rating_5_count');
+  
+  $rating_stats = $rating_query->execute()->fetchAssoc();
+  
+  // Calculate review statistics
+  $review_query = $connection->select('hotlinks_reviews', 'rv')
+    ->condition('rv.node_id', $node_id)
+    ->condition('rv.status', 'approved');
+  $review_query->addExpression('COUNT(*)', 'total_reviews');
+  
+  $review_stats = $review_query->execute()->fetchAssoc();
+  
+  // Merge statistics and handle null values
+  $stats = [
+    'node_id' => $node_id,
+    'total_ratings' => (int) ($rating_stats['total_ratings'] ?: 0),
+    'total_reviews' => (int) ($review_stats['total_reviews'] ?: 0),
+    'average_rating' => round((float) ($rating_stats['average_rating'] ?: 0), 2),
+    'rating_sum' => (int) ($rating_stats['rating_sum'] ?: 0),
+    'rating_1_count' => (int) ($rating_stats['rating_1_count'] ?: 0),
+    'rating_2_count' => (int) ($rating_stats['rating_2_count'] ?: 0),
+    'rating_3_count' => (int) ($rating_stats['rating_3_count'] ?: 0),
+    'rating_4_count' => (int) ($rating_stats['rating_4_count'] ?: 0),
+    'rating_5_count' => (int) ($rating_stats['rating_5_count'] ?: 0),
+    'last_updated' => time(),
+  ];
+  
+  // Update or insert statistics
+  $connection->merge('hotlinks_statistics')
+    ->key(['node_id' => $node_id])
+    ->fields($stats)
+    ->execute();
+    
+  // Update the node fields if they exist
+  try {
+    $node = \Drupal::entityTypeManager()->getStorage('node')->load($node_id);
+    if ($node && $node->bundle() === 'hotlink') {
+      $updated = FALSE;
+      
+      if ($node->hasField('field_hotlink_avg_rating')) {
+        $node->set('field_hotlink_avg_rating', $stats['average_rating']);
+        $updated = TRUE;
+      }
+      
+      if ($node->hasField('field_hotlink_review_count')) {
+        $node->set('field_hotlink_review_count', $stats['total_ratings']);
+        $updated = TRUE;
+      }
+      
+      if ($updated) {
+        $node->save();
+      }
+    }
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks_reviews')->warning('Failed to update node fields for @nid: @error', [
+      '@nid' => $node_id,
+      '@error' => $e->getMessage(),
+    ]);
+  }
 }
 
 /**

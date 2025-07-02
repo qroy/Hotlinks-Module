@@ -29,3 +29,39 @@ hotlinks_reviews.get_token:
   requirements:
     _permission: 'access content'
     _method: 'GET'
+
+hotlinks_reviews.get_node_data:
+  path: '/hotlinks/ajax/data/{node}'
+  defaults:
+    _controller: '\Drupal\hotlinks_reviews\Controller\HotlinksReviewsAjaxController::getNodeData'
+  requirements:
+    _permission: 'view hotlink ratings'
+    _method: 'GET'
+  options:
+    parameters:
+      node:
+        type: entity:node
+
+hotlinks_reviews.get_top_rated:
+  path: '/hotlinks/ajax/top-rated'
+  defaults:
+    _controller: '\Drupal\hotlinks_reviews\Controller\HotlinksReviewsAjaxController::getTopRated'
+  requirements:
+    _permission: 'access hotlinks'
+    _method: 'GET'
+
+hotlinks_reviews.moderate_review:
+  path: '/hotlinks/ajax/moderate'
+  defaults:
+    _controller: '\Drupal\hotlinks_reviews\Controller\HotlinksReviewsAjaxController::moderateReview'
+  requirements:
+    _permission: 'moderate hotlink reviews'
+    _method: 'POST'
+
+hotlinks_reviews.get_pending_reviews:
+  path: '/hotlinks/ajax/pending-reviews'
+  defaults:
+    _controller: '\Drupal\hotlinks_reviews\Controller\HotlinksReviewsAjaxController::getPendingReviews'
+  requirements:
+    _permission: 'moderate hotlink reviews'
+    _method: 'GET'

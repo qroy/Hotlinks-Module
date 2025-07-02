@@ -1,0 +1,110 @@
+{#
+/**
+ * @file
+ * Template for displaying a list of reviews.
+ *
+ * Available variables:
+ * - reviews: Array of review data.
+ * - node_id: The node ID being reviewed.
+ * - show_moderation: Whether to show moderation controls.
+ */
+#}
+{% if reviews %}
+  <div class="hotlinks-reviews-list">
+    <h3>{{ 'Recent Reviews'|t }}</h3>
+    
+    {% for review in reviews %}
+      <article class="hotlinks-review" data-review-id="{{ review.id }}">
+        <header class="review-header">
+          {% if review.user_name %}
+            <span class="reviewer-name">{{ review.user_name }}</span>
+          {% else %}
+            <span class="reviewer-name anonymous">{{ 'Anonymous'|t }}</span>
+          {% endif %}
+          
+          <time class="review-date" datetime="{{ review.created|date('c') }}">
+            {{ review.created|date('M j, Y') }}
+          </time>
+          
+          {% if review.rating_id %}
+            <div class="review-rating">
+              {% set rating = (review.rating_id / review.rating_id * 5)|round %}
+              <div class="hotlinks-rating-stars compact">
+                {% for i in 1..5 %}
+                  {% set star_class = 'hotlinks-rating-star' %}
+                  {% if i <= rating %}
+                    {% set star_class = star_class ~ ' filled' %}
+                  {% else %}
+                    {% set star_class = star_class ~ ' empty' %}
+                  {% endif %}
+                  <span class="{{ star_class }}">★</span>
+                {% endfor %}
+              </div>
+            </div>
+          {% endif %}
+        </header>
+        
+        <div class="review-content">
+          {% if review.review_title %}
+            <h4 class="review-title">{{ review.review_title }}</h4>
+          {% endif %}
+          
+          <div class="review-text">
+            {{ review.review_text|nl2br }}
+          </div>
+        </div>
+        
+        {% if show_moderation and review.status == 'pending' %}
+          <footer class="review-moderation">
+            <div class="moderation-status">
+              <span class="status-badge status-{{ review.status }}">
+                {{ review.status|capitalize }}
+              </span>
+            </div>
+            
+            <div class="moderation-actions">
+              <button type="button" 
+                      class="btn btn-approve" 
+                      data-review-id="{{ review.id }}" 
+                      data-action="approved">
+                {{ 'Approve'|t }}
+              </button>
+              
+              <button type="button" 
+                      class="btn btn-reject" 
+                      data-review-id="{{ review.id }}" 
+                      data-action="rejected">
+                {{ 'Reject'|t }}
+              </button>
+              
+              <button type="button" 
+                      class="btn btn-spam" 
+                      data-review-id="{{ review.id }}" 
+                      data-action="spam">
+                {{ 'Mark as Spam'|t }}
+              </button>
+            </div>
+          </footer>
+        {% endif %}
+        
+        {% if review.status != 'approved' %}
+          <div class="review-status-indicator">
+            <span class="status-badge status-{{ review.status }}">
+              {% if review.status == 'pending' %}
+                {{ 'Pending Moderation'|t }}
+              {% elseif review.status == 'rejected' %}
+                {{ 'Rejected'|t }}
+              {% elseif review.status == 'spam' %}
+                {{ 'Marked as Spam'|t }}
+              {% endif %}
+            </span>
+          </div>
+        {% endif %}
+      </article>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="no-reviews">
+    <p>{{ 'No reviews yet. Be the first to review this link!'|t }}</p>
+  </div>
+{% endif %}

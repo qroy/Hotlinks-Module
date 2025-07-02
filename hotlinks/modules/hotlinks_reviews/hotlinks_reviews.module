@@ -2,7 +2,7 @@
 
 /**
  * @file
- * Enhanced hotlinks_reviews.module with improved security and validation.
+ * Enhanced hotlinks_reviews.module using proper database service.
  */
 
 use Drupal\Core\Entity\EntityInterface;
@@ -27,6 +27,7 @@ function hotlinks_reviews_help($route_name, RouteMatchInterface $route_match) {
       $output .= '<li>' . t('Starfleet approval badges for excellence') . '</li>';
       $output .= '<li>' . t('Bridge officer moderation system') . '</li>';
       $output .= '<li>' . t('Full integration with Star Trek Wormhole categories') . '</li>';
+      $output .= '<li>' . t('Proper database storage with performance optimization') . '</li>';
       $output .= '</ul>';
       return $output;
   }
@@ -75,6 +76,14 @@ function hotlinks_reviews_theme() {
         'link_title' => '',
       ],
       'template' => 'hotlinks-starfleet-badge',
+    ],
+    'hotlinks_review_list' => [
+      'variables' => [
+        'reviews' => [],
+        'node_id' => 0,
+        'show_moderation' => FALSE,
+      ],
+      'template' => 'hotlinks-review-list',
     ],
   ];
 }
@@ -133,12 +142,18 @@ function _hotlinks_reviews_alter_hotlink_form(&$form, FormStateInterface $form_s
     }
     
     // Add input validation and security attributes
-    $form['field_hotlink_review']['widget'][0]['value']['#attributes']['maxlength'] = 2000;
+    $max_length = $config->get('max_review_length') ?: 2000;
+    $min_length = $config->get('min_review_length') ?: 10;
+    
+    $form['field_hotlink_review']['widget'][0]['value']['#attributes']['maxlength'] = $max_length;
     $form['field_hotlink_review']['widget'][0]['value']['#attributes']['data-security'] = 'validated';
     
     // Add client-side validation
-    $form['field_hotlink_review']['widget'][0]['value']['#attributes']['pattern'] = '.{10,2000}';
-    $form['field_hotlink_review']['widget'][0]['value']['#attributes']['title'] = t('Review must be between 10 and 2000 characters');
+    $form['field_hotlink_review']['widget'][0]['value']['#attributes']['pattern'] = ".{{$min_length},{$max_length}}";
+    $form['field_hotlink_review']['widget'][0]['value']['#attributes']['title'] = t('Review must be between @min and @max characters', [
+      '@min' => $min_length,
+      '@max' => $max_length,
+    ]);
   }
 
   $form['#validate'][] = '_hotlinks_reviews_validate_review';
@@ -152,8 +167,8 @@ function _hotlinks_reviews_alter_hotlink_form(&$form, FormStateInterface $form_s
     'useStarTrekLabels' => $config->get('use_star_trek_labels'),
     'starfleetApproval' => $config->get('starfleet_approval'),
     'nodeId' => $node_id,
-    'maxReviewLength' => 2000,
-    'minReviewLength' => 10,
+    'maxReviewLength' => $config->get('max_review_length') ?: 2000,
+    'minReviewLength' => $config->get('min_review_length') ?: 10,
     'rateLimitWarning' => t('Please wait before submitting another rating or review.'),
   ];
 }
@@ -165,6 +180,7 @@ function _hotlinks_reviews_validate_review(&$form, FormStateInterface $form_stat
   $config = \Drupal::config('hotlinks.settings');
   $rating = $form_state->getValue('field_hotlink_rating');
   $review = $form_state->getValue('field_hotlink_review');
+  $reviews_service = \Drupal::service('hotlinks_reviews.service');
 
   // Validate rating if provided
   if (!empty($rating[0]['value'])) {
@@ -183,14 +199,16 @@ function _hotlinks_reviews_validate_review(&$form, FormStateInterface $form_stat
   // Validate review text if provided
   if (!empty($review[0]['value'])) {
     $review_text = trim($review[0]['value']);
+    $max_length = $config->get('max_review_length') ?: 2000;
+    $min_length = $config->get('min_review_length') ?: 10;
     
     // Length validation
-    if (strlen($review_text) > 2000) {
-      $form_state->setErrorByName('field_hotlink_review', t('Review text is too long. Maximum 2000 characters.'));
+    if (strlen($review_text) > $max_length) {
+      $form_state->setErrorByName('field_hotlink_review', t('Review text is too long. Maximum @max characters.', ['@max' => $max_length]));
     }
     
-    if (strlen($review_text) < 10) {
-      $form_state->setErrorByName('field_hotlink_review', t('Review text is too short. Minimum 10 characters.'));
+    if (strlen($review_text) < $min_length) {
+      $form_state->setErrorByName('field_hotlink_review', t('Review text is too short. Minimum @min characters.', ['@min' => $min_length]));
     }
     
     // Security validation - check for suspicious content
@@ -200,14 +218,14 @@ function _hotlinks_reviews_validate_review(&$form, FormStateInterface $form_stat
     }
     
     // Check for spam patterns (basic)
-    if (_hotlinks_reviews_is_spam($review_text)) {
+    if ($config->get('enable_spam_detection') && _hotlinks_reviews_is_spam($review_text)) {
       $form_state->setErrorByName('field_hotlink_review', t('Review appears to be spam. Please write a genuine review.'));
     }
   }
 
   // Require review text if rating is provided and config requires it
   if ($config->get('require_review_text') && !empty($rating[0]['value'])) {
-    if (empty($review[0]['value']) || strlen(trim($review[0]['value'])) < 10) {
+    if (empty($review[0]['value']) || strlen(trim($review[0]['value'])) < ($config->get('min_review_length') ?: 10)) {
       $message = $config->get('use_star_trek_labels') ?
         t('A mission report is required when you provide a Starfleet evaluation.') :
         t('A review is required when you provide a rating.');
@@ -217,8 +235,30 @@ function _hotlinks_reviews_validate_review(&$form, FormStateInterface $form_stat
 
   // Rate limiting check
   $current_user = \Drupal::currentUser();
-  if (_hotlinks_reviews_is_rate_limited($current_user->id(), \Drupal::request()->getClientIp())) {
-    $form_state->setErrorByName('field_hotlink_rating', t('You are submitting too frequently. Please wait before submitting another rating or review.'));
+  $request = \Drupal::request();
+  
+  try {
+    // Use a simplified rate limit check for form validation
+    $rate_limit_window = $config->get('rate_limit_window') ?: 300;
+    $max_submissions = $config->get('rate_limit_submissions') ?: 5;
+    
+    // This is a basic check - the service will do the full validation
+    $state_data = \Drupal::state()->get('hotlinks_reviews.form_submissions', []);
+    $user_key = 'user_' . $current_user->id();
+    $current_time = time();
+    
+    if (isset($state_data[$user_key])) {
+      $recent_submissions = array_filter($state_data[$user_key], function($timestamp) use ($current_time, $rate_limit_window) {
+        return ($current_time - $timestamp) < $rate_limit_window;
+      });
+      
+      if (count($recent_submissions) >= $max_submissions) {
+        $form_state->setErrorByName('field_hotlink_rating', t('You are submitting too frequently. Please wait before submitting another rating or review.'));
+      }
+    }
+  } catch (\Exception $e) {
+    // Log error but don't block submission
+    \Drupal::logger('hotlinks_reviews')->warning('Error checking rate limit in form validation: @error', ['@error' => $e->getMessage()]);
   }
 }
 
@@ -233,6 +273,9 @@ function _hotlinks_reviews_is_spam($text) {
     '/weight.?loss|diet.?pills/i',
     '/https?:\/\/[^\s]{30,}/i', // Long URLs
     '/(.)\1{10,}/', // Repeated characters
+    '/buy.{1,10}now/i',
+    '/click.{1,10}here/i',
+    '/free.{1,10}(money|cash|prize)/i',
   ];
   
   foreach ($spam_patterns as $pattern) {
@@ -247,42 +290,10 @@ function _hotlinks_reviews_is_spam($text) {
     return TRUE;
   }
   
-  return FALSE;
-}
-
-/**
- * Check if user/IP is rate limited.
- */
-function _hotlinks_reviews_is_rate_limited($user_id, $ip_address) {
-  $rate_limit_data = \Drupal::state()->get('hotlinks_reviews.rate_limits', []);
-  $current_time = time();
-  $rate_limit_window = 300; // 5 minutes
-  $max_submissions = 5; // Maximum submissions per window
-  
-  // Check user-based rate limiting
-  if ($user_id > 0) {
-    $user_key = 'user_' . $user_id;
-    if (isset($rate_limit_data[$user_key])) {
-      $submissions = array_filter($rate_limit_data[$user_key], function($timestamp) use ($current_time, $rate_limit_window) {
-        return ($current_time - $timestamp) < $rate_limit_window;
-      });
-      
-      if (count($submissions) >= $max_submissions) {
-        return TRUE;
-      }
-    }
-  }
-  
-  // Check IP-based rate limiting
-  $ip_key = 'ip_' . $ip_address;
-  if (isset($rate_limit_data[$ip_key])) {
-    $submissions = array_filter($rate_limit_data[$ip_key], function($timestamp) use ($current_time, $rate_limit_window) {
-      return ($current_time - $timestamp) < $rate_limit_window;
-    });
-    
-    if (count($submissions) >= $max_submissions) {
-      return TRUE;
-    }
+  // Check for excessive capitalization
+  $caps_ratio = (strlen($text) - strlen(strtolower($text))) / strlen($text);
+  if ($caps_ratio > 0.5 && strlen($text) > 20) {
+    return TRUE;
   }
   
   return FALSE;
@@ -293,9 +304,38 @@ function _hotlinks_reviews_is_rate_limited($user_id, $ip_address) {
  */
 function hotlinks_reviews_entity_presave(EntityInterface $entity) {
   if ($entity->getEntityTypeId() == 'node' && $entity->bundle() == 'hotlink') {
-    _hotlinks_reviews_update_aggregates($entity);
-    _hotlinks_reviews_update_starfleet_status($entity);
     _hotlinks_reviews_sanitize_review_content($entity);
+    _hotlinks_reviews_track_form_submission($entity);
+  }
+}
+
+/**
+ * Track form submission for rate limiting.
+ */
+function _hotlinks_reviews_track_form_submission(EntityInterface $entity) {
+  $current_user = \Drupal::currentUser();
+  
+  // Only track if there's rating or review data
+  $has_rating = $entity->hasField('field_hotlink_rating') && !$entity->get('field_hotlink_rating')->isEmpty();
+  $has_review = $entity->hasField('field_hotlink_review') && !$entity->get('field_hotlink_review')->isEmpty();
+  
+  if ($has_rating || $has_review) {
+    $state_data = \Drupal::state()->get('hotlinks_reviews.form_submissions', []);
+    $user_key = 'user_' . $current_user->id();
+    
+    if (!isset($state_data[$user_key])) {
+      $state_data[$user_key] = [];
+    }
+    
+    $state_data[$user_key][] = time();
+    
+    // Keep only recent submissions (last 24 hours)
+    $cutoff_time = time() - 86400;
+    $state_data[$user_key] = array_filter($state_data[$user_key], function($timestamp) use ($cutoff_time) {
+      return $timestamp > $cutoff_time;
+    });
+    
+    \Drupal::state()->set('hotlinks_reviews.form_submissions', $state_data);
   }
 }
 
@@ -318,24 +358,27 @@ function _hotlinks_reviews_sanitize_review_content(EntityInterface $entity) {
 }
 
 /**
- * Enhanced node view with Star Trek integration and security.
+ * Enhanced node view with Star Trek integration and database service.
  */
 function hotlinks_reviews_node_view(array &$build, EntityInterface $entity, $view_mode, $langcode) {
   if ($entity->getEntityTypeId() == 'node' && $entity->bundle() == 'hotlink') {
     $config = \Drupal::config('hotlinks.settings');
+    $reviews_service = \Drupal::service('hotlinks_reviews.service');
     
     if ($view_mode == 'full') {
-      $avg_rating = $entity->get('field_hotlink_avg_rating')->value ?: 0;
-      $review_count = $entity->get('field_hotlink_review_count')->value ?: 0;
+      // Get statistics from service
+      $stats = $reviews_service->getNodeStatistics($entity->id());
+      $avg_rating = $stats['average_rating'];
+      $review_count = $stats['total_ratings'];
       
       $build['review_summary'] = [
         '#theme' => 'hotlinks_review_summary',
         '#average_rating' => $avg_rating,
         '#total_reviews' => $review_count,
-        '#rating_breakdown' => _hotlinks_reviews_get_rating_breakdown($entity->id()),
+        '#rating_breakdown' => $reviews_service->getRatingBreakdown($entity->id()),
         '#starfleet_approved' => $avg_rating >= 4.0 && $config->get('starfleet_approval'),
         '#weight' => 3,
-        '#cache' => ['tags' => ['node:' . $entity->id()]],
+        '#cache' => ['tags' => ['node:' . $entity->id(), 'hotlinks_reviews:' . $entity->id()]],
       ];
       
       // Add Starfleet badge for highly rated content
@@ -352,7 +395,7 @@ function hotlinks_reviews_node_view(array &$build, EntityInterface $entity, $vie
       // Add interactive rating widget for authenticated users
       $current_user = \Drupal::currentUser();
       if ($current_user->hasPermission('rate hotlinks')) {
-        $user_rating = hotlinks_reviews_get_user_rating($entity->id(), $current_user->id());
+        $user_rating = $reviews_service->getUserRating($entity->id());
         
         $build['rating_widget'] = [
           '#theme' => 'hotlinks_rating_widget',
@@ -373,6 +416,21 @@ function hotlinks_reviews_node_view(array &$build, EntityInterface $entity, $vie
           ],
         ];
       }
+      
+      // Add reviews list
+      if ($config->get('show_reviewer_names')) {
+        $reviews = $reviews_service->getNodeReviews($entity->id(), 10);
+        if (!empty($reviews)) {
+          $build['reviews_list'] = [
+            '#theme' => 'hotlinks_review_list',
+            '#reviews' => $reviews,
+            '#node_id' => $entity->id(),
+            '#show_moderation' => $current_user->hasPermission('moderate hotlink reviews'),
+            '#weight' => 5,
+            '#cache' => ['tags' => ['hotlinks_reviews:' . $entity->id()]],
+          ];
+        }
+      }
     }
 
     $build['#attached']['library'][] = 'hotlinks_reviews/rating-display';
@@ -383,7 +441,9 @@ function hotlinks_reviews_node_view(array &$build, EntityInterface $entity, $vie
  * Update Starfleet approval status based on ratings.
  */
 function _hotlinks_reviews_update_starfleet_status(EntityInterface $entity) {
-  $avg_rating = $entity->get('field_hotlink_avg_rating')->value ?: 0;
+  $reviews_service = \Drupal::service('hotlinks_reviews.service');
+  $stats = $reviews_service->getNodeStatistics($entity->id());
+  $avg_rating = $stats['average_rating'];
   $config = \Drupal::config('hotlinks.settings');
   
   if ($config->get('starfleet_approval') && $avg_rating >= 4.0) {
@@ -396,59 +456,6 @@ function _hotlinks_reviews_update_starfleet_status(EntityInterface $entity) {
     ];
     \Drupal::state()->set('hotlinks_reviews.starfleet_approved', $approved_links);
   }
-}
-
-/**
- * Enhanced aggregate updates with better statistics and security.
- */
-function _hotlinks_reviews_update_aggregates(EntityInterface $entity) {
-  $rating_field = $entity->get('field_hotlink_rating');
-
-  if (!$rating_field->isEmpty()) {
-    $node_id = $entity->id();
-    $ratings = \Drupal::state()->get('hotlinks_reviews.ratings', []);
-    
-    if (isset($ratings[$node_id])) {
-      $total = 0;
-      $count = 0;
-      
-      foreach ($ratings[$node_id] as $user_rating) {
-        // Validate stored rating data
-        if (isset($user_rating['rating']) && is_numeric($user_rating['rating'])) {
-          $rating_value = (int) $user_rating['rating'];
-          if ($rating_value >= 1 && $rating_value <= 5) {
-            $total += $rating_value;
-            $count++;
-          }
-        }
-      }
-      
-      $new_avg = $count > 0 ? round($total / $count, 2) : 0;
-      $entity->set('field_hotlink_avg_rating', $new_avg);
-      $entity->set('field_hotlink_review_count', $count);
-    }
-  }
-}
-
-/**
- * Enhanced rating breakdown with additional statistics and validation.
- */
-function _hotlinks_reviews_get_rating_breakdown($node_id) {
-  $ratings = \Drupal::state()->get('hotlinks_reviews.ratings', []);
-  $breakdown = [5 => 0, 4 => 0, 3 => 0, 2 => 0, 1 => 0];
-  
-  if (isset($ratings[$node_id])) {
-    foreach ($ratings[$node_id] as $user_rating) {
-      if (isset($user_rating['rating']) && is_numeric($user_rating['rating'])) {
-        $rating = (int) $user_rating['rating'];
-        if ($rating >= 1 && $rating <= 5) {
-          $breakdown[$rating]++;
-        }
-      }
-    }
-  }
-  
-  return $breakdown;
 }
 
 /**
@@ -501,12 +508,9 @@ function hotlinks_reviews_user_can_rate($node_id, $user_id = NULL) {
     return FALSE;
   }
 
-  if (!$config->get('allow_review_updates') && hotlinks_reviews_get_user_rating($node_id, $user->id())) {
-    return FALSE;
-  }
-
-  // Check rate limiting
-  if (_hotlinks_reviews_is_rate_limited($user->id(), \Drupal::request()->getClientIp())) {
+  $reviews_service = \Drupal::service('hotlinks_reviews.service');
+  
+  if (!$config->get('allow_review_updates') && $reviews_service->getUserRating($node_id, $user->id())) {
     return FALSE;
   }
 
@@ -517,41 +521,41 @@ function hotlinks_reviews_user_can_rate($node_id, $user_id = NULL) {
  * Get user's existing rating with validation.
  */
 function hotlinks_reviews_get_user_rating($node_id, $user_id) {
-  $ratings = \Drupal::state()->get('hotlinks_reviews.ratings', []);
-  
-  if (isset($ratings[$node_id][$user_id]['rating'])) {
-    $rating = $ratings[$node_id][$user_id]['rating'];
-    // Validate the rating
-    if (is_numeric($rating) && $rating >= 1 && $rating <= 5) {
-      return (int) $rating;
-    }
-  }
-  
-  return NULL;
+  $reviews_service = \Drupal::service('hotlinks_reviews.service');
+  return $reviews_service->getUserRating($node_id, $user_id);
 }
 
 /**
  * Implements hook_cron().
- * Clean up old rate limiting data and other maintenance tasks.
+ * Clean up old data and perform maintenance tasks.
  */
 function hotlinks_reviews_cron() {
-  // Clean up old rate limiting data (older than 24 hours)
-  $rate_limit_data = \Drupal::state()->get('hotlinks_reviews.rate_limits', []);
+  $reviews_service = \Drupal::service('hotlinks_reviews.service');
+  
+  // Clean up old rate limiting data (older than 7 days)
+  $deleted_count = $reviews_service->cleanupRateLimitData(7);
+  
+  if ($deleted_count > 0) {
+    \Drupal::logger('hotlinks_reviews')->info('Cleaned up @count old rate limit records', ['@count' => $deleted_count]);
+  }
+  
+  // Clean up old form submission tracking
+  $state_data = \Drupal::state()->get('hotlinks_reviews.form_submissions', []);
   $current_time = time();
   $cleanup_threshold = 86400; // 24 hours
   
-  foreach ($rate_limit_data as $key => $timestamps) {
-    $rate_limit_data[$key] = array_filter($timestamps, function($timestamp) use ($current_time, $cleanup_threshold) {
+  foreach ($state_data as $key => $timestamps) {
+    $state_data[$key] = array_filter($timestamps, function($timestamp) use ($current_time, $cleanup_threshold) {
       return ($current_time - $timestamp) < $cleanup_threshold;
     });
     
     // Remove empty entries
-    if (empty($rate_limit_data[$key])) {
-      unset($rate_limit_data[$key]);
+    if (empty($state_data[$key])) {
+      unset($state_data[$key]);
     }
   }
   
-  \Drupal::state()->set('hotlinks_reviews.rate_limits', $rate_limit_data);
+  \Drupal::state()->set('hotlinks_reviews.form_submissions', $state_data);
   
   // Clean up old Starfleet approval data (older than 30 days)
   $approved_links = \Drupal::state()->get('hotlinks_reviews.starfleet_approved', []);
@@ -563,9 +567,9 @@ function hotlinks_reviews_cron() {
       $node = \Drupal::entityTypeManager()->getStorage('node')->load($node_id);
       if (!$node || $node->bundle() !== 'hotlink') {
         unset($approved_links[$node_id]);
-      } elseif ($node->hasField('field_hotlink_avg_rating')) {
-        $avg_rating = $node->get('field_hotlink_avg_rating')->value ?: 0;
-        if ($avg_rating < 4.0) {
+      } else {
+        $stats = $reviews_service->getNodeStatistics($node_id);
+        if ($stats['average_rating'] < 4.0) {
           unset($approved_links[$node_id]);
         }
       }
