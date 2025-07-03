@@ -1,6 +1,14 @@
+# hotlinks.links.menu.yml
 hotlinks.admin_settings:
   title: 'Hotlinks'
   parent: system.admin_config_content
   description: 'Configure hotlinks module settings'
   route_name: hotlinks.admin_settings
   weight: 10
+
+hotlinks.test_data:
+  title: 'Test Data'
+  parent: hotlinks.admin_settings
+  description: 'Generate or remove test data for development and demonstrations'  
+  route_name: hotlinks.test_data
+  weight: 20

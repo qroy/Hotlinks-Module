@@ -25,3 +25,11 @@ hotlinks.category:
     parameters:
       category:
         type: entity:taxonomy_term
+
+hotlinks.test_data:
+  path: '/admin/config/content/hotlinks/test-data'
+  defaults:
+    _form: '\Drupal\hotlinks\Form\HotlinksTestDataForm'
+    _title: 'Test Data Management'
+  requirements:
+    _permission: 'administer hotlinks'

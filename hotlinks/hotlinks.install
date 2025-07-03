@@ -42,6 +42,11 @@ function hotlinks_install() {
 
     \Drupal::messenger()->addMessage(t('Hotlinks module installed successfully! You can now create categories and add hotlinks.'));
 
+    // Add message about test data availability
+    \Drupal::messenger()->addMessage(t('You can generate test data for development and demonstration purposes by visiting the <a href="@url">Test Data Management</a> page.', [
+      '@url' => '/admin/config/content/hotlinks/test-data',
+    ]));
+
   } catch (\Exception $e) {
     \Drupal::logger('hotlinks')->error('Error during installation: @message', ['@message' => $e->getMessage()]);
     throw $e;
@@ -556,6 +561,156 @@ function _hotlinks_set_default_config() {
   
   $config->save();
   \Drupal::logger('hotlinks')->info('Set default configuration');
+}
+
+/**
+ * Update hook to add test data functionality.
+ */
+function hotlinks_update_8001() {
+  // Clear menu cache to ensure new menu items appear
+  \Drupal::service('plugin.manager.menu.link')->rebuild();
+  
+  // Clear routing cache to ensure new routes are available
+  \Drupal::service('router.builder')->rebuild();
+  
+  // Clear service container to register new services
+  \Drupal::service('kernel')->invalidateContainer();
+  
+  return t('Added test data management functionality.');
+}
+
+/**
+ * Helper function to check if test data already exists.
+ */
+function hotlinks_test_data_exists() {
+  // Check for test categories
+  $test_categories = [
+    'Technology',
+    'Science', 
+    'News & Media',
+    'Education',
+    'Entertainment',
+    'Health & Wellness',
+  ];
+  
+  $existing_categories = \Drupal::entityTypeManager()
+    ->getStorage('taxonomy_term')
+    ->loadByProperties([
+      'vid' => 'hotlink_categories',
+      'name' => $test_categories,
+    ]);
+    
+  if (!empty($existing_categories)) {
+    return TRUE;
+  }
+  
+  // Check for test hotlinks
+  $test_titles = [
+    'GitHub - Where Software is Built',
+    'Stack Overflow - Developer Community',
+    'NASA - National Aeronautics and Space Administration',
+  ];
+  
+  $existing_hotlinks = \Drupal::entityTypeManager()
+    ->getStorage('node')
+    ->loadByProperties([
+      'type' => 'hotlink',
+      'title' => $test_titles,
+    ]);
+    
+  return !empty($existing_hotlinks);
+}
+
+/**
+ * Drush command helper function for generating test data.
+ */
+function hotlinks_drush_generate_test_data($options = []) {
+  $options += [
+    'categories' => TRUE,
+    'hotlinks' => TRUE,
+    'users' => TRUE,
+    'reviews' => TRUE,
+    'thumbnails' => TRUE,
+  ];
+  
+  try {
+    $test_data_service = \Drupal::service('hotlinks.test_data');
+    $results = $test_data_service->generateTestData($options);
+    
+    $messages = [];
+    if ($results['categories'] > 0) {
+      $messages[] = "Created {$results['categories']} categories";
+    }
+    if ($results['hotlinks'] > 0) {
+      $messages[] = "Created {$results['hotlinks']} hotlinks";
+    }
+    if ($results['users'] > 0) {
+      $messages[] = "Created {$results['users']} users";
+    }
+    if ($results['reviews'] > 0) {
+      $messages[] = "Created {$results['reviews']} reviews";
+    }
+    
+    if (!empty($messages)) {
+      drush_print("Test data generated successfully: " . implode(', ', $messages));
+    } else {
+      drush_print("No new test data created. Data may already exist.");
+    }
+    
+    if (!empty($results['errors'])) {
+      foreach ($results['errors'] as $error) {
+        drush_print("Error: " . $error, 0, STDERR);
+      }
+    }
+    
+  } catch (\Exception $e) {
+    drush_print("Failed to generate test data: " . $e->getMessage(), 0, STDERR);
+    return FALSE;
+  }
+  
+  return TRUE;
+}
+
+/**
+ * Drush command helper function for removing test data.
+ */
+function hotlinks_drush_remove_test_data() {
+  try {
+    $test_data_service = \Drupal::service('hotlinks.test_data');
+    $results = $test_data_service->removeTestData();
+    
+    $messages = [];
+    if ($results['hotlinks'] > 0) {
+      $messages[] = "Removed {$results['hotlinks']} hotlinks";
+    }
+    if ($results['categories'] > 0) {
+      $messages[] = "Removed {$results['categories']} categories";
+    }
+    if ($results['users'] > 0) {
+      $messages[] = "Removed {$results['users']} users";
+    }
+    if ($results['reviews'] > 0) {
+      $messages[] = "Cleaned up review database";
+    }
+    
+    if (!empty($messages)) {
+      drush_print("Test data removed successfully: " . implode(', ', $messages));
+    } else {
+      drush_print("No test data found to remove.");
+    }
+    
+    if (!empty($results['errors'])) {
+      foreach ($results['errors'] as $error) {
+        drush_print("Error: " . $error, 0, STDERR);
+      }
+    }
+    
+  } catch (\Exception $e) {
+    drush_print("Failed to remove test data: " . $e->getMessage(), 0, STDERR);
+    return FALSE;
+  }
+  
+  return TRUE;
 }
 
 /**

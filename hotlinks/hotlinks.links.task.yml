@@ -1,0 +1,13 @@
+# hotlinks.links.task.yml
+# This file creates tabs under the main Hotlinks settings page
+
+hotlinks.admin_settings:
+  route_name: hotlinks.admin_settings
+  title: 'Settings'
+  base_route: hotlinks.admin_settings
+
+hotlinks.test_data:
+  route_name: hotlinks.test_data
+  title: 'Test Data'
+  base_route: hotlinks.admin_settings
+  weight: 10

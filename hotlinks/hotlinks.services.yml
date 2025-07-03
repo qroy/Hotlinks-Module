@@ -1,0 +1,6 @@
+services:
+  hotlinks.test_data:
+    class: Drupal\hotlinks\Service\HotlinksTestDataService
+    arguments: ['@entity_type.manager', '@config.factory', '@current_user', '@database', '@file_system']
+    tags:
+      - { name: service }
