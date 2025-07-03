@@ -141,7 +141,7 @@ class HotlinksController extends ControllerBase {
         ];
       }
 
-      // Show links in this category
+      // Show links in this category using proper view mode rendering
       if (!empty($category_hotlinks)) {
         $build['links'] = [
           '#type' => 'container',
@@ -156,10 +156,52 @@ class HotlinksController extends ControllerBase {
           ],
         ];
 
+        // Use the view builder to render hotlinks with proper display mode
+        $view_builder = $this->entityTypeManager->getViewBuilder('node');
+        
         foreach ($category_hotlinks as $hotlink) {
-          $item = $this->buildHotlinkItem($hotlink);
-          if ($item) {
-            $build['links']['list']['#items'][] = ['#markup' => \Drupal::service('renderer')->render($item)];
+          try {
+            // Render using the hotlinks_index view mode for consistency
+            $rendered_hotlink = $view_builder->view($hotlink, 'hotlinks_index');
+            
+            // Ensure rating libraries are attached
+            $rendered_hotlink['#attached']['library'][] = 'hotlinks_reviews/rating-display';
+            
+            // Add AJAX rating widget if user can rate and reviews module is enabled
+            if (\Drupal::moduleHandler()->moduleExists('hotlinks_reviews') && 
+                \Drupal::currentUser()->hasPermission('rate hotlinks')) {
+              
+              $reviews_service = \Drupal::service('hotlinks_reviews.service');
+              $user_rating = $reviews_service->getUserRating($hotlink->id());
+              
+              // Add interactive rating widget
+              $rendered_hotlink['rating_widget'] = [
+                '#theme' => 'hotlinks_rating_widget',
+                '#rating' => $user_rating ?: 0,
+                '#max_rating' => 5,
+                '#name' => 'user_rating_' . $hotlink->id(),
+                '#node_id' => $hotlink->id(),
+                '#weight' => 10,
+                '#attached' => [
+                  'library' => ['hotlinks_reviews/rating-widget'],
+                  'drupalSettings' => [
+                    'hotlinksReviews' => [
+                      'nodeId' => $hotlink->id(),
+                      'useStarTrekLabels' => \Drupal::config('hotlinks.settings')->get('use_star_trek_labels') ?: FALSE,
+                    ],
+                  ],
+                ],
+              ];
+            }
+            
+            $build['links']['list']['#items'][] = ['#markup' => \Drupal::service('renderer')->render($rendered_hotlink)];
+            
+          } catch (\Exception $e) {
+            \Drupal::logger('hotlinks')->error('Error rendering hotlink @id in category: @error', [
+              '@id' => $hotlink->id(),
+              '@error' => $e->getMessage(),
+            ]);
+            // Continue with other hotlinks even if one fails
           }
         }
       } else {
@@ -168,7 +210,12 @@ class HotlinksController extends ControllerBase {
         ];
       }
 
+      // Attach required libraries
       $build['#attached']['library'][] = 'hotlinks/hotlinks.styles';
+      if (\Drupal::moduleHandler()->moduleExists('hotlinks_reviews')) {
+        $build['#attached']['library'][] = 'hotlinks_reviews/rating-display';
+        $build['#attached']['library'][] = 'hotlinks_reviews/rating-widget';
+      }
 
     } catch (\Exception $e) {
       $build['error'] = [
@@ -489,157 +536,6 @@ class HotlinksController extends ControllerBase {
     }
 
     return $filtered;
-  }
-
-  /**
-   * Build a hotlink item display using custom display mode with comprehensive error handling.
-   */
-  private function buildHotlinkItem($hotlink) {
-    try {
-      // Check if the custom view mode exists and is enabled
-      $view_modes = \Drupal::service('entity_display.repository')->getViewModes('node');
-      
-      if (isset($view_modes['hotlinks_index'])) {
-        // Use the custom 'hotlinks_index' view mode
-        $view_builder = \Drupal::entityTypeManager()->getViewBuilder('node');
-        return $view_builder->view($hotlink, 'hotlinks_index');
-      } else {
-        // Fallback to custom rendering if view mode doesn't exist
-        return $this->buildHotlinkItemFallback($hotlink);
-      }
-
-    } catch (\Exception $e) {
-      \Drupal::logger('hotlinks')->error('Error building hotlink item: @message', ['@message' => $e->getMessage()]);
-      
-      // Fallback to basic display
-      return $this->buildHotlinkItemFallback($hotlink);
-    }
-  }
-
-  /**
-   * Fallback method to build hotlink item display with comprehensive field checking.
-   */
-  private function buildHotlinkItemFallback($hotlink) {
-    try {
-      // Check if required fields exist
-      if (!$hotlink->hasField('field_hotlink_url')) {
-        \Drupal::logger('hotlinks')->error('Hotlink @nid missing URL field', ['@nid' => $hotlink->id()]);
-        return ['#markup' => '<div class="hotlink-item-error">Hotlink missing URL field</div>'];
-      }
-
-      $url_field = $hotlink->get('field_hotlink_url');
-      if ($url_field->isEmpty()) {
-        return ['#markup' => '<div class="hotlink-item">Invalid hotlink - no URL</div>'];
-      }
-
-      $url_item = $url_field->first();
-      $link_title = !empty($url_item->title) ? $url_item->title : $hotlink->getTitle();
-      $link_url = $url_item->getUrl();
-
-      // Get description if field exists
-      $description = '';
-      if ($hotlink->hasField('field_hotlink_description')) {
-        $description_field = $hotlink->get('field_hotlink_description');
-        if (!$description_field->isEmpty()) {
-          $description_item = $description_field->first();
-          $description = $description_item->value ?? '';
-        }
-      }
-
-      $item = [
-        '#type' => 'container',
-        '#attributes' => ['class' => ['hotlink-item', 'node--view-mode-hotlinks-index']],
-      ];
-
-      // Check if thumbnail field exists before trying to use it
-      if ($hotlink->hasField('field_hotlink_thumbnail')) {
-        $thumbnail_field = $hotlink->get('field_hotlink_thumbnail');
-        
-        // Add thumbnail if available
-        if (!$thumbnail_field->isEmpty()) {
-          $thumbnail_item = $thumbnail_field->first();
-          $file = $thumbnail_item->entity;
-          
-          if ($file && $file->access('view')) {
-            $item['thumbnail'] = [
-              '#theme' => 'image_style',
-              '#style_name' => 'thumbnail',
-              '#uri' => $file->getFileUri(),
-              '#alt' => $thumbnail_item->alt ?: $link_title,
-              '#attributes' => ['class' => ['hotlink-thumbnail']],
-            ];
-          }
-        } else {
-          // Default thumbnail placeholder
-          $item['thumbnail'] = [
-            '#markup' => '<div class="hotlink-thumbnail-placeholder">🔗</div>',
-          ];
-        }
-
-        $item['content'] = [
-          '#type' => 'container',
-          '#attributes' => ['class' => ['hotlink-content']],
-        ];
-
-        // Title links to node (like the custom view mode would)
-        $item['content']['title'] = [
-          '#type' => 'link',
-          '#title' => $this->escapeOutput($hotlink->getTitle()),
-          '#url' => $hotlink->toUrl(),
-          '#attributes' => ['class' => ['hotlink-node-link']],
-        ];
-
-        $item['content']['url'] = [
-          '#type' => 'link',
-          '#title' => $this->escapeOutput($link_title),
-          '#url' => $link_url,
-          '#attributes' => [
-            'target' => '_blank',
-            'rel' => 'noopener noreferrer',
-            'class' => ['hotlink-url'],
-          ],
-        ];
-
-        if (!empty($description)) {
-          $item['content']['description'] = [
-            '#markup' => '<div class="hotlink-description">' . $this->escapeOutput($description) . '</div>',
-          ];
-        }
-      } else {
-        // Very basic fallback for when thumbnail field doesn't exist
-        \Drupal::logger('hotlinks')->warning('Hotlink @nid missing thumbnail field', ['@nid' => $hotlink->id()]);
-        
-        $item['title'] = [
-          '#type' => 'link',
-          '#title' => $this->escapeOutput($hotlink->getTitle()),
-          '#url' => $hotlink->toUrl(),
-          '#attributes' => ['class' => ['hotlink-node-link']],
-        ];
-
-        $item['url'] = [
-          '#type' => 'link',
-          '#title' => $this->escapeOutput($link_title),
-          '#url' => $link_url,
-          '#attributes' => [
-            'target' => '_blank',
-            'rel' => 'noopener noreferrer',
-            'class' => ['hotlink-url'],
-          ],
-        ];
-
-        if (!empty($description)) {
-          $item['description'] = [
-            '#markup' => '<div class="hotlink-description">' . $this->escapeOutput($description) . '</div>',
-          ];
-        }
-      }
-
-      return $item;
-
-    } catch (\Exception $e) {
-      \Drupal::logger('hotlinks')->error('Error in fallback hotlink display: @message', ['@message' => $e->getMessage()]);
-      return ['#markup' => '<div class="hotlink-item-error">Error loading hotlink: ' . $this->escapeOutput($hotlink->getTitle()) . '</div>'];
-    }
   }
 
   /**

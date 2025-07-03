@@ -7,18 +7,64 @@
  * - rating: Current rating value.
  * - max_rating: Maximum rating (usually 5).
  * - name: Field name for form input.
+ * - node_id: The node ID for AJAX submissions.
+ * - star_trek_labels: Whether to use Star Trek themed labels.
  */
 #}
-<div class="hotlinks-rating-widget" data-max-rating="{{ max_rating }}">
-  {% for i in 1..max_rating %}
-    {% set star_class = 'rating-star' %}
-    {% if i <= rating %}
-      {% set star_class = star_class ~ ' selected' %}
-    {% else %}
-      {% set star_class = star_class ~ ' empty' %}
-    {% endif %}
-    <span class="{{ star_class }}" data-rating="{{ i }}">★</span>
-  {% endfor %}
-  <span class="rating-label">{{ 'Click to rate'|t }}</span>
-  <input type="hidden" name="{{ name }}" value="{{ rating }}" data-rating-input="true" />
+<div class="hotlinks-rating-widget" 
+     data-max-rating="{{ max_rating }}" 
+     data-node-id="{{ node_id }}"
+     data-current-rating="{{ rating }}"
+     role="radiogroup" 
+     aria-label="Rate this hotlink">
+  
+  <div class="rating-stars-container">
+    {% for i in 1..max_rating %}
+      {% set star_class = 'rating-star' %}
+      {% if i <= rating %}
+        {% set star_class = star_class ~ ' selected' %}
+      {% else %}
+        {% set star_class = star_class ~ ' empty' %}
+      {% endif %}
+      <span class="{{ star_class }}" 
+            data-rating="{{ i }}"
+            tabindex="0"
+            role="radio"
+            aria-checked="{{ i <= rating ? 'true' : 'false' }}"
+            aria-label="Rate {{ i }} out of {{ max_rating }} stars">★</span>
+    {% endfor %}
+  </div>
+  
+  <div class="rating-feedback">
+    <span class="rating-label">
+      {% if rating > 0 %}
+        {% if star_trek_labels %}
+          {% set trek_labels = {
+            1: 'Avoid - Hostile Territory',
+            2: 'Caution - Proceed with Awareness', 
+            3: 'Serviceable - Standard Resource',
+            4: 'Recommended - Valuable Asset',
+            5: 'Essential - Starfleet Priority'
+          } %}
+          {{ trek_labels[rating] }}
+        {% else %}
+          {% set standard_labels = {
+            1: 'Poor - Not useful',
+            2: 'Fair - Somewhat useful',
+            3: 'Good - Useful', 
+            4: 'Very Good - Very useful',
+            5: 'Excellent - Extremely useful'
+          } %}
+          {{ standard_labels[rating] }}
+        {% endif %}
+      {% else %}
+        {{ 'Click to rate'|t }}
+      {% endif %}
+    </span>
+  </div>
+  
+  <input type="hidden" 
+         name="{{ name }}" 
+         value="{{ rating }}" 
+         data-rating-input="true" />
 </div>

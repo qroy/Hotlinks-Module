@@ -437,24 +437,39 @@ function _hotlinks_reviews_initialize_statistics() {
     ->accessCheck(FALSE);
   $nids = $query->execute();
   
+  if (empty($nids)) {
+    \Drupal::logger('hotlinks_reviews')->info('No existing hotlinks found to initialize statistics for.');
+    return;
+  }
+  
   foreach ($nids as $nid) {
-    // Insert initial statistics record
-    $connection->merge('hotlinks_statistics')
-      ->key(['node_id' => $nid])
-      ->fields([
-        'node_id' => $nid,
-        'total_ratings' => 0,
-        'total_reviews' => 0,
-        'average_rating' => 0,
-        'rating_sum' => 0,
-        'rating_1_count' => 0,
-        'rating_2_count' => 0,
-        'rating_3_count' => 0,
-        'rating_4_count' => 0,
-        'rating_5_count' => 0,
-        'last_updated' => \Drupal::time()->getRequestTime(),
-      ])
-      ->execute();
+    try {
+      // Use insert instead of merge for initial setup to avoid the array key issue
+      $connection->insert('hotlinks_statistics')
+        ->fields([
+          'node_id' => (int) $nid,
+          'total_ratings' => 0,
+          'total_reviews' => 0,
+          'average_rating' => 0.00,
+          'rating_sum' => 0,
+          'rating_1_count' => 0,
+          'rating_2_count' => 0,
+          'rating_3_count' => 0,
+          'rating_4_count' => 0,
+          'rating_5_count' => 0,
+          'last_updated' => \Drupal::time()->getRequestTime(),
+        ])
+        ->execute();
+    } catch (\Exception $e) {
+      // If record already exists, skip it
+      if (strpos($e->getMessage(), 'Duplicate entry') !== FALSE) {
+        \Drupal::logger('hotlinks_reviews')->info('Statistics already exist for hotlink @nid, skipping.', ['@nid' => $nid]);
+        continue;
+      } else {
+        // Re-throw other exceptions
+        throw $e;
+      }
+    }
   }
   
   \Drupal::logger('hotlinks_reviews')->info('Initialized statistics for @count hotlinks', ['@count' => count($nids)]);
@@ -663,36 +678,34 @@ function _hotlinks_reviews_update_view_displays() {
         'label' => 'inline',
         'weight' => 5,
       ])
-      ->setComponent('field_hotlink_review_count', [
-        'type' => 'number_integer',
-        'label' => 'hidden',
-        'weight' => 3,
-      ])
+      ->removeComponent('field_hotlink_review_count') // This will be shown via the rating display
       ->save();
 
     \Drupal::logger('hotlinks_reviews')->info('Updated default view display for reviews');
   }
 
-  // Update hotlinks_index view display
+  // Update hotlinks_index view display - This is KEY for category listings!
   $index_view_display = EntityViewDisplay::load('node.hotlink.hotlinks_index');
   if ($index_view_display) {
     $index_view_display
       ->setComponent('field_hotlink_avg_rating', [
         'type' => 'hotlinks_rating_stars',
         'label' => 'hidden',
-        'weight' => 2,
+        'weight' => 5, // Put after description but visible
         'settings' => [
           'max_rating' => 5,
           'show_count' => TRUE,
-          'compact' => TRUE,
+          'compact' => TRUE, // Compact for listings
         ],
       ])
-      ->removeComponent('field_hotlink_rating')
-      ->removeComponent('field_hotlink_review')
-      ->removeComponent('field_hotlink_review_count')
+      ->removeComponent('field_hotlink_rating') // Individual ratings not shown in listings
+      ->removeComponent('field_hotlink_review') // Individual reviews not shown in listings
+      ->removeComponent('field_hotlink_review_count') // Count shown via rating display
       ->save();
 
     \Drupal::logger('hotlinks_reviews')->info('Updated hotlinks_index view display for reviews');
+  } else {
+    \Drupal::logger('hotlinks_reviews')->warning('Hotlinks_index view display not found. Ratings may not display in category listings.');
   }
 }
 
@@ -748,6 +761,26 @@ function _hotlinks_reviews_add_config() {
   
   $config->save();
   \Drupal::logger('hotlinks_reviews')->info('Added reviews configuration settings');
+}
+
+/**
+ * Update hook to fix display configuration for existing installations.
+ */
+function hotlinks_reviews_update_8001() {
+  try {
+    // Re-run display configuration to fix any missing settings
+    _hotlinks_reviews_update_view_displays();
+    
+    // Clear caches to ensure changes take effect
+    \Drupal::entityTypeManager()->clearCachedDefinitions();
+    \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+    \Drupal::service('entity_display.repository')->clearDisplayModeInfo();
+    
+    return t('Updated rating display configuration for category listings.');
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks_reviews')->error('Update 8001 failed: @error', ['@error' => $e->getMessage()]);
+    throw $e;
+  }
 }
 
 /**

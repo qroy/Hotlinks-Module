@@ -364,12 +364,15 @@ function hotlinks_reviews_node_view(array &$build, EntityInterface $entity, $vie
   if ($entity->getEntityTypeId() == 'node' && $entity->bundle() == 'hotlink') {
     $config = \Drupal::config('hotlinks.settings');
     $reviews_service = \Drupal::service('hotlinks_reviews.service');
+    $current_user = \Drupal::currentUser();
+    
+    // Get statistics from service
+    $stats = $reviews_service->getNodeStatistics($entity->id());
+    $avg_rating = $stats['average_rating'];
+    $review_count = $stats['total_ratings'];
     
     if ($view_mode == 'full') {
-      // Get statistics from service
-      $stats = $reviews_service->getNodeStatistics($entity->id());
-      $avg_rating = $stats['average_rating'];
-      $review_count = $stats['total_ratings'];
+      // Full node page - show everything including interactive widgets
       
       $build['review_summary'] = [
         '#theme' => 'hotlinks_review_summary',
@@ -393,7 +396,6 @@ function hotlinks_reviews_node_view(array &$build, EntityInterface $entity, $vie
       }
       
       // Add interactive rating widget for authenticated users
-      $current_user = \Drupal::currentUser();
       if ($current_user->hasPermission('rate hotlinks')) {
         $user_rating = $reviews_service->getUserRating($entity->id());
         
@@ -430,6 +432,46 @@ function hotlinks_reviews_node_view(array &$build, EntityInterface $entity, $vie
             '#cache' => ['tags' => ['hotlinks_reviews:' . $entity->id()]],
           ];
         }
+      }
+    }
+    
+    // Both full and hotlinks_index view modes should show average rating
+    if ($view_mode == 'full' || $view_mode == 'hotlinks_index') {
+      // Only show if there are ratings
+      if ($avg_rating > 0) {
+        $build['average_rating_display'] = [
+          '#theme' => 'hotlinks_rating_stars',
+          '#rating' => $avg_rating,
+          '#count' => $review_count,
+          '#max_rating' => 5,
+          '#compact' => ($view_mode == 'hotlinks_index'),
+          '#weight' => ($view_mode == 'hotlinks_index') ? 1 : 5,
+          '#cache' => ['tags' => ['hotlinks_reviews:' . $entity->id()]],
+        ];
+      }
+      
+      // For hotlinks_index, also add mini rating widget if user can rate
+      if ($view_mode == 'hotlinks_index' && $current_user->hasPermission('rate hotlinks')) {
+        $user_rating = $reviews_service->getUserRating($entity->id());
+        
+        $build['quick_rating_widget'] = [
+          '#theme' => 'hotlinks_rating_widget',
+          '#rating' => $user_rating ?: 0,
+          '#max_rating' => 5,
+          '#name' => 'quick_rating_' . $entity->id(),
+          '#star_trek_labels' => FALSE, // Keep compact for listings
+          '#node_id' => $entity->id(),
+          '#weight' => 10,
+          '#attached' => [
+            'library' => ['hotlinks_reviews/rating-widget'],
+            'drupalSettings' => [
+              'hotlinksReviews' => [
+                'nodeId' => $entity->id(),
+                'useStarTrekLabels' => FALSE,
+              ],
+            ],
+          ],
+        ];
       }
     }
 

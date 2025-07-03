@@ -100,169 +100,47 @@ class HotlinksReviewsService {
     try {
       $time = time();
 
-      // Insert or update rating
-      $this->database->merge('hotlinks_ratings')
-        ->key([
-          'node_id' => $node_id,
-          'user_id' => $user_id,
-        ])
-        ->fields([
-          'rating' => $rating,
-          'ip_address' => substr($ip_address, 0, 45),
-          'created' => $time,
-          'updated' => $time,
-        ])
-        ->execute();
+      // Check if rating already exists
+      $existing_rating = $this->database->select('hotlinks_ratings', 'r')
+        ->fields('r', ['id'])
+        ->condition('node_id', (int) $node_id)
+        ->condition('user_id', (int) $user_id)
+        ->execute()
+        ->fetchField();
 
-      // Update statistics
-      $this->updateNodeStatistics($node_id);
-
-      // Track rate limiting
-      $this->trackSubmission($user_id, $ip_address, 'rating', $node_id);
-
-      // Get updated statistics
-      $stats = $this->getNodeStatistics($node_id);
-
-      // Update node fields
-      $this->updateNodeFields($node_id, $stats);
-
-      return [
-        'success' => TRUE,
-        'data' => [
-          'newAverage' => $stats['average_rating'],
-          'reviewCount' => $stats['total_ratings'],
-          'userRating' => $rating,
-        ],
-      ];
-
-    } catch (\Exception $e) {
-      $transaction->rollBack();
-      throw $e;
-    }
-  }
-
-  /**
-   * Submit a review for a hotlink.
-   *
-   * @param int $node_id
-   *   The node ID of the hotlink.
-   * @param string $review_text
-   *   The review text.
-   * @param string $ip_address
-   *   The user's IP address.
-   * @param int $rating
-   *   Optional associated rating.
-   * @param string $review_title
-   *   Optional review title.
-   * @param int $user_id
-   *   Optional user ID. Defaults to current user.
-   *
-   * @return array
-   *   Result array with success status and data.
-   *
-   * @throws \Exception
-   *   If validation fails or database operation fails.
-   */
-  public function submitReview($node_id, $review_text, $ip_address, $rating = NULL, $review_title = NULL, $user_id = NULL) {
-    // Validate inputs
-    if (!is_numeric($node_id) || $node_id <= 0) {
-      throw new \InvalidArgumentException('Invalid node ID');
-    }
-
-    $review_text = trim($review_text);
-    if (empty($review_text)) {
-      throw new \InvalidArgumentException('Review text is required');
-    }
-
-    $config = $this->configFactory->get('hotlinks.settings');
-    $min_length = $config->get('min_review_length') ?: 10;
-    $max_length = $config->get('max_review_length') ?: 2000;
-
-    if (strlen($review_text) < $min_length) {
-      throw new \InvalidArgumentException("Review text must be at least {$min_length} characters");
-    }
-
-    if (strlen($review_text) > $max_length) {
-      throw new \InvalidArgumentException("Review text must not exceed {$max_length} characters");
-    }
-
-    // Sanitize review text
-    $review_text = Xss::filter($review_text);
-
-    // Check for spam
-    if ($config->get('enable_spam_detection') && $this->isSpam($review_text)) {
-      throw new \InvalidArgumentException('Review appears to be spam');
-    }
-
-    $user_id = $user_id ?: $this->currentUser->id();
-
-    // Validate IP address
-    if (!filter_var($ip_address, FILTER_VALIDATE_IP)) {
-      throw new \InvalidArgumentException('Invalid IP address');
-    }
-
-    // Validate optional rating
-    if ($rating !== NULL) {
-      if (!is_numeric($rating) || $rating < 1 || $rating > 5) {
-        throw new \InvalidArgumentException('Rating must be between 1 and 5');
+      if ($existing_review) {
+        // Update existing review
+        $this->database->update('hotlinks_reviews')
+          ->fields([
+            'rating_id' => $rating_id,
+            'review_text' => $review_text,
+            'review_title' => $review_title ? Html::escape(substr($review_title, 0, 255)) : NULL,
+            'status' => $status,
+            'user_name' => $user_name,
+            'ip_address' => substr($ip_address, 0, 45),
+            'user_agent' => substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 65535),
+            'updated' => $time,
+          ])
+          ->condition('id', $existing_review)
+          ->execute();
+      } else {
+        // Insert new review
+        $this->database->insert('hotlinks_reviews')
+          ->fields([
+            'node_id' => (int) $node_id,
+            'user_id' => (int) $user_id,
+            'rating_id' => $rating_id,
+            'review_text' => $review_text,
+            'review_title' => $review_title ? Html::escape(substr($review_title, 0, 255)) : NULL,
+            'status' => $status,
+            'user_name' => $user_name,
+            'ip_address' => substr($ip_address, 0, 45),
+            'user_agent' => substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 65535),
+            'created' => $time,
+            'updated' => $time,
+          ])
+          ->execute();
       }
-    }
-
-    // Check permissions and rate limiting
-    $this->validateSubmissionPermissions($node_id, $user_id, $ip_address, 'review');
-
-    $transaction = $this->database->startTransaction();
-
-    try {
-      $time = time();
-      $user_name = NULL;
-
-      // Get user display name if not anonymous
-      if ($user_id > 0) {
-        $user = $this->entityTypeManager->getStorage('user')->load($user_id);
-        if ($user) {
-          $user_name = Html::escape($user->getDisplayName());
-        }
-      }
-
-      // Determine review status
-      $status = $config->get('moderate_reviews') ? 'pending' : 'approved';
-
-      // Get associated rating ID if rating was provided
-      $rating_id = NULL;
-      if ($rating !== NULL) {
-        // First submit the rating
-        $this->submitRating($node_id, $rating, $ip_address, $user_id);
-        
-        // Get the rating ID
-        $rating_record = $this->database->select('hotlinks_ratings', 'r')
-          ->fields('r', ['id'])
-          ->condition('node_id', $node_id)
-          ->condition('user_id', $user_id)
-          ->execute()
-          ->fetchField();
-          
-        $rating_id = $rating_record ?: NULL;
-      }
-
-      // Insert or update review
-      $this->database->merge('hotlinks_reviews')
-        ->key([
-          'node_id' => $node_id,
-          'user_id' => $user_id,
-        ])
-        ->fields([
-          'rating_id' => $rating_id,
-          'review_text' => $review_text,
-          'review_title' => $review_title ? Html::escape(substr($review_title, 0, 255)) : NULL,
-          'status' => $status,
-          'user_name' => $user_name,
-          'ip_address' => substr($ip_address, 0, 45),
-          'user_agent' => substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 65535),
-          'created' => $time,
-          'updated' => $time,
-        ])
-        ->execute();
 
       // Update statistics only if review is approved
       if ($status === 'approved') {
@@ -545,7 +423,7 @@ class HotlinksReviewsService {
   public function updateNodeStatistics($node_id) {
     // Calculate rating statistics
     $rating_query = $this->database->select('hotlinks_ratings', 'r')
-      ->condition('r.node_id', $node_id);
+      ->condition('r.node_id', (int) $node_id);
     $rating_query->addExpression('COUNT(*)', 'total_ratings');
     $rating_query->addExpression('SUM(rating)', 'rating_sum');
     $rating_query->addExpression('AVG(rating)', 'average_rating');
@@ -559,7 +437,7 @@ class HotlinksReviewsService {
 
     // Calculate review statistics
     $review_query = $this->database->select('hotlinks_reviews', 'rv')
-      ->condition('rv.node_id', $node_id)
+      ->condition('rv.node_id', (int) $node_id)
       ->condition('rv.status', 'approved');
     $review_query->addExpression('COUNT(*)', 'total_reviews');
 
@@ -567,7 +445,7 @@ class HotlinksReviewsService {
 
     // Merge statistics and handle null values
     $stats = [
-      'node_id' => $node_id,
+      'node_id' => (int) $node_id,
       'total_ratings' => (int) ($rating_stats['total_ratings'] ?: 0),
       'total_reviews' => (int) ($review_stats['total_reviews'] ?: 0),
       'average_rating' => round((float) ($rating_stats['average_rating'] ?: 0), 2),
@@ -580,11 +458,25 @@ class HotlinksReviewsService {
       'last_updated' => time(),
     ];
 
-    // Update or insert statistics
-    $this->database->merge('hotlinks_statistics')
-      ->key(['node_id' => $node_id])
-      ->fields($stats)
-      ->execute();
+    // Check if statistics record exists
+    $existing_stats = $this->database->select('hotlinks_statistics', 's')
+      ->fields('s', ['node_id'])
+      ->condition('node_id', (int) $node_id)
+      ->execute()
+      ->fetchField();
+
+    if ($existing_stats) {
+      // Update existing statistics
+      $this->database->update('hotlinks_statistics')
+        ->fields($stats)
+        ->condition('node_id', (int) $node_id)
+        ->execute();
+    } else {
+      // Insert new statistics
+      $this->database->insert('hotlinks_statistics')
+        ->fields($stats)
+        ->execute();
+    }
   }
 
   /**
@@ -868,4 +760,167 @@ class HotlinksReviewsService {
       'pending_reviews' => $review_count - $approved_reviews,
     ];
   }
-}
+}rating) {
+        // Update existing rating
+        $this->database->update('hotlinks_ratings')
+          ->fields([
+            'rating' => (int) $rating,
+            'ip_address' => substr($ip_address, 0, 45),
+            'updated' => $time,
+          ])
+          ->condition('id', $existing_rating)
+          ->execute();
+      } else {
+        // Insert new rating
+        $this->database->insert('hotlinks_ratings')
+          ->fields([
+            'node_id' => (int) $node_id,
+            'user_id' => (int) $user_id,
+            'rating' => (int) $rating,
+            'ip_address' => substr($ip_address, 0, 45),
+            'created' => $time,
+            'updated' => $time,
+          ])
+          ->execute();
+      }
+
+      // Update statistics
+      $this->updateNodeStatistics($node_id);
+
+      // Track rate limiting
+      $this->trackSubmission($user_id, $ip_address, 'rating', $node_id);
+
+      // Get updated statistics
+      $stats = $this->getNodeStatistics($node_id);
+
+      // Update node fields
+      $this->updateNodeFields($node_id, $stats);
+
+      return [
+        'success' => TRUE,
+        'data' => [
+          'newAverage' => $stats['average_rating'],
+          'reviewCount' => $stats['total_ratings'],
+          'userRating' => $rating,
+        ],
+      ];
+
+    } catch (\Exception $e) {
+      $transaction->rollBack();
+      throw $e;
+    }
+  }
+
+  /**
+   * Submit a review for a hotlink.
+   *
+   * @param int $node_id
+   *   The node ID of the hotlink.
+   * @param string $review_text
+   *   The review text.
+   * @param string $ip_address
+   *   The user's IP address.
+   * @param int $rating
+   *   Optional associated rating.
+   * @param string $review_title
+   *   Optional review title.
+   * @param int $user_id
+   *   Optional user ID. Defaults to current user.
+   *
+   * @return array
+   *   Result array with success status and data.
+   *
+   * @throws \Exception
+   *   If validation fails or database operation fails.
+   */
+  public function submitReview($node_id, $review_text, $ip_address, $rating = NULL, $review_title = NULL, $user_id = NULL) {
+    // Validate inputs
+    if (!is_numeric($node_id) || $node_id <= 0) {
+      throw new \InvalidArgumentException('Invalid node ID');
+    }
+
+    $review_text = trim($review_text);
+    if (empty($review_text)) {
+      throw new \InvalidArgumentException('Review text is required');
+    }
+
+    $config = $this->configFactory->get('hotlinks.settings');
+    $min_length = $config->get('min_review_length') ?: 10;
+    $max_length = $config->get('max_review_length') ?: 2000;
+
+    if (strlen($review_text) < $min_length) {
+      throw new \InvalidArgumentException("Review text must be at least {$min_length} characters");
+    }
+
+    if (strlen($review_text) > $max_length) {
+      throw new \InvalidArgumentException("Review text must not exceed {$max_length} characters");
+    }
+
+    // Sanitize review text
+    $review_text = Xss::filter($review_text);
+
+    // Check for spam
+    if ($config->get('enable_spam_detection') && $this->isSpam($review_text)) {
+      throw new \InvalidArgumentException('Review appears to be spam');
+    }
+
+    $user_id = $user_id ?: $this->currentUser->id();
+
+    // Validate IP address
+    if (!filter_var($ip_address, FILTER_VALIDATE_IP)) {
+      throw new \InvalidArgumentException('Invalid IP address');
+    }
+
+    // Validate optional rating
+    if ($rating !== NULL) {
+      if (!is_numeric($rating) || $rating < 1 || $rating > 5) {
+        throw new \InvalidArgumentException('Rating must be between 1 and 5');
+      }
+    }
+
+    // Check permissions and rate limiting
+    $this->validateSubmissionPermissions($node_id, $user_id, $ip_address, 'review');
+
+    $transaction = $this->database->startTransaction();
+
+    try {
+      $time = time();
+      $user_name = NULL;
+
+      // Get user display name if not anonymous
+      if ($user_id > 0) {
+        $user = $this->entityTypeManager->getStorage('user')->load($user_id);
+        if ($user) {
+          $user_name = Html::escape($user->getDisplayName());
+        }
+      }
+
+      // Determine review status
+      $status = $config->get('moderate_reviews') ? 'pending' : 'approved';
+
+      // Get associated rating ID if rating was provided
+      $rating_id = NULL;
+      if ($rating !== NULL) {
+        // First submit the rating
+        $this->submitRating($node_id, $rating, $ip_address, $user_id);
+        
+        // Get the rating ID
+        $rating_record = $this->database->select('hotlinks_ratings', 'r')
+          ->fields('r', ['id'])
+          ->condition('node_id', $node_id)
+          ->condition('user_id', $user_id)
+          ->execute()
+          ->fetchField();
+          
+        $rating_id = $rating_record ?: NULL;
+      }
+
+      // Insert or update review
+      $existing_review = $this->database->select('hotlinks_reviews', 'rv')
+        ->fields('rv', ['id'])
+        ->condition('node_id', (int) $node_id)
+        ->condition('user_id', (int) $user_id)
+        ->execute()
+        ->fetchField();
+
+      if ($existing_

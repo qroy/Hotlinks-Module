@@ -3,6 +3,40 @@
  * Star Trek themed styling for the Hotlinks Reviews submodule.
  */
 
+/* Category listing specific styles */
+.node--view-mode-hotlinks-index .field--name-field-hotlink-avg-rating {
+  margin-top: 0.5em;
+  margin-bottom: 0.25em;
+}
+
+.node--view-mode-hotlinks-index .hotlinks-rating-stars.compact {
+  font-size: 0.85em;
+  gap: 0.1em;
+}
+
+.node--view-mode-hotlinks-index .hotlinks-rating-widget {
+  margin-top: 0.5em;
+  font-size: 0.9em;
+}
+
+.node--view-mode-hotlinks-index .hotlinks-rating-widget .rating-stars-container {
+  display: inline-flex;
+  margin-right: 0.5em;
+}
+
+.node--view-mode-hotlinks-index .hotlinks-rating-widget .rating-feedback {
+  display: inline-block;
+  font-size: 0.8em;
+  opacity: 0.8;
+}
+
+/* Ensure rating widgets appear in hotlinks list */
+.hotlinks-list .hotlinks-rating-widget,
+.hotlinks-list .field--name-field-hotlink-avg-rating {
+  display: block;
+  margin-top: 0.5em;
+}
+
 /* Rating Stars */
 .hotlinks-rating-stars {
   display: inline-flex;
@@ -42,8 +76,15 @@
 .hotlinks-rating-widget {
   display: flex;
   align-items: center;
-  gap: 0.25em;
+  gap: 0.5em;
   margin: 0.5em 0;
+  flex-wrap: wrap;
+}
+
+.hotlinks-rating-widget .rating-stars-container {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
 }
 
 .hotlinks-rating-widget .rating-star {
@@ -72,8 +113,13 @@
   border-radius: 2px;
 }
 
+.hotlinks-rating-widget .rating-feedback {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+
 .hotlinks-rating-widget .rating-label {
-  margin-left: 0.5em;
   font-style: italic;
   opacity: 0.8;
   min-width: 8em;
@@ -354,6 +400,17 @@
     font-size: 0.8em;
     padding: 0.4em 0.8em;
   }
+  
+  /* Mobile specific for category listings */
+  .node--view-mode-hotlinks-index .hotlinks-rating-widget {
+    flex-direction: row;
+    align-items: center;
+    font-size: 0.8em;
+  }
+  
+  .node--view-mode-hotlinks-index .hotlinks-rating-widget .rating-star {
+    font-size: 1.1em;
+  }
 }
 
 @media (max-width: 480px) {
@@ -368,6 +425,15 @@
   
   .hotlinks-review-summary .rating-number {
     font-size: 1.5em;
+  }
+  
+  /* Very small screens - simplify category listing ratings */
+  .node--view-mode-hotlinks-index .hotlinks-rating-widget .rating-feedback {
+    display: none;
+  }
+  
+  .node--view-mode-hotlinks-index .hotlinks-rating-widget {
+    margin-top: 0.25em;
   }
 }
 
