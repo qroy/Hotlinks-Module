@@ -4,3 +4,9 @@ services:
     arguments: ['@entity_type.manager', '@config.factory', '@current_user', '@database', '@file_system']
     tags:
       - { name: service }
+  
+  hotlinks.twig_extension:
+    class: Drupal\hotlinks\TwigExtension\HotlinksTwigExtension
+    arguments: ['@entity_type.manager']
+    tags:
+      - { name: twig.extension }

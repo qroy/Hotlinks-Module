@@ -756,3 +756,221 @@ function hotlinks_uninstall() {
   \Drupal::configFactory()->getEditable('hotlinks.settings')->delete();
   \Drupal::logger('hotlinks')->info('Deleted hotlinks configuration');
 }
+<?php
+
+/**
+ * @file
+ * Installation and update hooks for Views integration.
+ * Add this code to your hotlinks.install file.
+ */
+
+/**
+ * Install the Views configuration for Hotlinks.
+ * 
+ * Add this function to your hotlinks.install file.
+ */
+function hotlinks_update_8002() {
+  // Check if Views module is enabled
+  if (!\Drupal::moduleHandler()->moduleExists('views')) {
+    throw new \Exception('Views module must be enabled to use Views-based hotlinks display.');
+  }
+
+  try {
+    // Import the view configuration
+    $config_path = \Drupal::service('extension.list.module')->getPath('hotlinks') . '/config/install';
+    $config_source = new \Drupal\Core\Config\FileStorage($config_path);
+    
+    $config_name = 'views.view.hotlinks_by_category';
+    
+    if ($config_source->exists($config_name)) {
+      $config_data = $config_source->read($config_name);
+      
+      // Generate a proper UUID if not present
+      if (empty($config_data['uuid'])) {
+        $config_data['uuid'] = \Drupal::service('uuid')->generate();
+      }
+      
+      \Drupal::configFactory()
+        ->getEditable($config_name)
+        ->setData($config_data)
+        ->save();
+        
+      // Clear Views cache
+      if (\Drupal::hasService('views.views_data')) {
+        \Drupal::service('views.views_data')->clear();
+      }
+      
+      // Clear routing cache since we're adding new routes
+      \Drupal::service('router.builder')->rebuild();
+      
+      return t('Installed Views-based hotlinks display. You can now use Views to customize your hotlinks listings.');
+    } else {
+      throw new \Exception('Views configuration file not found.');
+    }
+    
+  } catch (\Exception $e) {
+    \Drupal::logger('hotlinks')->error('Error installing Views configuration: @message', [
+      '@message' => $e->getMessage(),
+    ]);
+    throw $e;
+  }
+}
+
+/**
+ * Enable the Views integration.
+ * 
+ * Call this function after enabling the Views module.
+ */
+function hotlinks_enable_views_integration() {
+  // Update routing to use the new Views controller
+  \Drupal::service('router.builder')->rebuild();
+  
+  // Clear all caches to ensure new templates and services are available
+  drupal_flush_all_caches();
+  
+  \Drupal::messenger()->addMessage(t('Views integration has been enabled. Category pages now use Views for display.'));
+}
+
+/**
+ * Check system requirements for Views integration.
+ */
+function hotlinks_check_views_requirements() {
+  $requirements = [];
+  
+  // Check if Views is enabled
+  $requirements['views'] = [
+    'title' => 'Views Module',
+    'status' => \Drupal::moduleHandler()->moduleExists('views'),
+    'message' => \Drupal::moduleHandler()->moduleExists('views') ? 
+      'Views module is enabled' : 
+      'Views module is required for advanced hotlinks display',
+  ];
+  
+  // Check if our view exists
+  $view_exists = \Drupal::entityTypeManager()
+    ->getStorage('view')
+    ->load('hotlinks_by_category') !== NULL;
+    
+  $requirements['hotlinks_view'] = [
+    'title' => 'Hotlinks View Configuration',
+    'status' => $view_exists,
+    'message' => $view_exists ? 
+      'Hotlinks view is properly configured' : 
+      'Hotlinks view configuration is missing - run update hooks',
+  ];
+  
+  // Check if Twig extension is registered
+  $twig_extension_exists = \Drupal::hasService('hotlinks.twig_extension');
+  
+  $requirements['twig_extension'] = [
+    'title' => 'Hotlinks Twig Extension',
+    'status' => $twig_extension_exists,
+    'message' => $twig_extension_exists ? 
+      'Twig extension is registered' : 
+      'Twig extension is not registered - clear caches',
+  ];
+  
+  return $requirements;
+}
+
+/**
+ * Migrate from custom controller to Views-based display.
+ * 
+ * This function helps transition existing sites.
+ */
+function hotlinks_migrate_to_views() {
+  $messenger = \Drupal::messenger();
+  
+  try {
+    // Backup existing configuration
+    $config = \Drupal::configFactory()->getEditable('hotlinks.settings');
+    $backup_settings = $config->getRawData();
+    
+    // Store backup in state for rollback if needed
+    \Drupal::state()->set('hotlinks.pre_views_backup', $backup_settings);
+    
+    // Install Views configuration
+    hotlinks_update_8002();
+    
+    // Update any custom themes/templates that might be affected
+    $theme_suggestions = [
+      'node--hotlink--hotlinks-index.html.twig',
+      'taxonomy-term--hotlink-categories.html.twig',
+      'views-view--hotlinks-by-category.html.twig',
+    ];
+    
+    $theme_path = \Drupal::service('theme_handler')->getDefault();
+    $theme_templates_exist = FALSE;
+    
+    foreach ($theme_suggestions as $template) {
+      $template_path = DRUPAL_ROOT . '/themes/' . $theme_path . '/templates/' . $template;
+      if (file_exists($template_path)) {
+        $theme_templates_exist = TRUE;
+        break;
+      }
+    }
+    
+    if ($theme_templates_exist) {
+      $messenger->addWarning(t('Custom templates detected in your theme. You may need to update them for Views compatibility.'));
+    }
+    
+    // Set flag to indicate Views migration is complete
+    $config->set('views_integration_enabled', TRUE);
+    $config->save();
+    
+    $messenger->addMessage(t('Successfully migrated to Views-based display. Your hotlinks are now powered by Views!'));
+    
+    return TRUE;
+    
+  } catch (\Exception $e) {
+    // Rollback on error
+    if ($backup_settings = \Drupal::state()->get('hotlinks.pre_views_backup')) {
+      \Drupal::configFactory()
+        ->getEditable('hotlinks.settings')
+        ->setData($backup_settings)
+        ->save();
+    }
+    
+    $messenger->addError(t('Migration to Views failed: @error', ['@error' => $e->getMessage()]));
+    
+    return FALSE;
+  }
+}
+
+/**
+ * Rollback Views integration if needed.
+ */
+function hotlinks_rollback_views_integration() {
+  try {
+    // Remove the view
+    $view = \Drupal::entityTypeManager()->getStorage('view')->load('hotlinks_by_category');
+    if ($view) {
+      $view->delete();
+    }
+    
+    // Restore backup settings
+    $backup_settings = \Drupal::state()->get('hotlinks.pre_views_backup');
+    if ($backup_settings) {
+      \Drupal::configFactory()
+        ->getEditable('hotlinks.settings')
+        ->setData($backup_settings)
+        ->save();
+      
+      \Drupal::state()->delete('hotlinks.pre_views_backup');
+    }
+    
+    // Update routing back to original controller
+    \Drupal::service('router.builder')->rebuild();
+    
+    // Clear caches
+    drupal_flush_all_caches();
+    
+    \Drupal::messenger()->addMessage(t('Views integration has been rolled back to the original custom controller.'));
+    
+    return TRUE;
+    
+  } catch (\Exception $e) {
+    \Drupal::messenger()->addError(t('Rollback failed: @error', ['@error' => $e->getMessage()]));
+    return FALSE;
+  }
+}

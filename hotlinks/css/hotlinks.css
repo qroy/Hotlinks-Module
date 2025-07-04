@@ -2,11 +2,21 @@
  * @file
  * Minimal structural CSS for the Hotlinks module.
  * Fonts, colors, and spacing inherit from theme.
+ * Updated to support Views-based display.
  */
 
 /* Main container */
 .hotlinks-index {
   /* Structural layout only */
+}
+
+/* Views-based containers */
+.hotlinks-view-wrapper {
+  /* Basic container for Views output */
+}
+
+.hotlinks-list-container {
+  /* Container for list-based hotlinks display */
 }
 
 /* Category entries on front page */
@@ -31,12 +41,15 @@
 .category-description {
   margin-left: 1em;
   font-style: italic;
+  margin-bottom: 1em;
 }
 
 /* Category page styling */
 .category-subcategories {
   border-bottom: 1px solid;
   border-color: inherit;
+  margin-bottom: 1.5em;
+  padding-bottom: 1em;
 }
 
 .subcategory-nav-list {
@@ -59,7 +72,28 @@
   /* Inherit theme link styling */
 }
 
-/* Hotlinks list */
+/* Category stats and info */
+.category-stats {
+  margin: 1em 0;
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+.breadcrumb {
+  margin-bottom: 1em;
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
+.breadcrumb a {
+  text-decoration: none;
+}
+
+.breadcrumb a:hover {
+  text-decoration: underline;
+}
+
+/* Hotlinks list - Works with both custom and Views output */
 .hotlinks-list {
   list-style: none;
   padding: 0;
@@ -70,9 +104,10 @@
   /* Basic list item */
 }
 
-/* Hotlink display mode styling */
+/* Hotlink display mode styling - Enhanced for Views */
 .node--view-mode-hotlinks-index,
-.hotlink-item {
+.hotlink-item,
+.hotlink-display-wrapper {
   display: flex;
   align-items: flex-start;
   gap: 0.75em;
@@ -89,13 +124,31 @@
   padding-bottom: 0;
 }
 
+/* Views field styling */
+.views-field {
+  /* Allow flexible layout for Views fields */
+}
+
+.views-field-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.views-field-field-hotlink-thumbnail {
+  flex-shrink: 0;
+  order: -1; /* Put thumbnail first */
+}
+
+/* Maintain existing thumbnail styling */
 .node--view-mode-hotlinks-index .field--name-field-hotlink-thumbnail,
-.hotlink-thumbnail {
+.hotlink-thumbnail,
+.views-field-field-hotlink-thumbnail img {
   flex-shrink: 0;
 }
 
 .node--view-mode-hotlinks-index .field--name-field-hotlink-thumbnail img,
-.hotlink-thumbnail {
+.hotlink-thumbnail,
+.views-field-field-hotlink-thumbnail img {
   width: 64px;
   height: 48px;
   object-fit: cover;
@@ -115,59 +168,296 @@
   opacity: 0.5;
 }
 
+/* Content area styling */
 .node--view-mode-hotlinks-index .field--name-title,
 .hotlink-content,
-.hotlink-node-link {
+.hotlink-node-link,
+.views-field-title {
   flex: 1;
   min-width: 0;
 }
 
 .node--view-mode-hotlinks-index .field--name-title,
-.hotlink-node-link {
+.hotlink-node-link,
+.views-field-title a {
   font-weight: bold;
   margin-bottom: 0.25em;
   display: block;
 }
 
 .node--view-mode-hotlinks-index .field--name-title a,
-.hotlink-node-link {
+.hotlink-node-link,
+.views-field-title a {
   text-decoration: none;
 }
 
 .node--view-mode-hotlinks-index .field--name-title a:hover,
-.hotlink-node-link:hover {
+.hotlink-node-link:hover,
+.views-field-title a:hover {
   text-decoration: underline;
 }
 
+/* URL field styling */
 .node--view-mode-hotlinks-index .field--name-field-hotlink-url,
-.hotlink-url {
+.hotlink-url,
+.views-field-field-hotlink-url {
   margin-bottom: 0.25em;
   font-size: 0.9em;
 }
 
-.node--view-mode-hotlinks-index .field--name-field-hotlink-category {
+/* Category field styling */
+.node--view-mode-hotlinks-index .field--name-field-hotlink-category,
+.views-field-field-hotlink-category {
   margin-bottom: 0.25em;
   font-size: 0.85em;
 }
 
+/* Description field styling */
 .node--view-mode-hotlinks-index .field--name-field-hotlink-description,
-.hotlink-description {
+.hotlink-description,
+.views-field-field-hotlink-description {
   font-style: italic;
   opacity: 0.8;
   font-size: 0.9em;
 }
 
-/* Responsive adjustments */
+/* Rating fields in Views */
+.views-field-field-hotlink-avg-rating {
+  margin-top: 0.5em;
+  margin-bottom: 0.25em;
+}
+
+/* Quick rating widget in Views */
+.hotlink-quick-rating {
+  margin-top: 0.5em;
+  padding-top: 0.5em;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.hotlink-quick-rating .hotlinks-rating-widget {
+  font-size: 0.9em;
+}
+
+.hotlink-quick-rating .rating-label {
+  margin-right: 0.5em;
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+
+.hotlink-quick-rating .rating-star {
+  font-size: 1.2em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-right: 0.1em;
+}
+
+.hotlink-quick-rating .rating-star:hover {
+  transform: scale(1.1);
+  color: #FFD700;
+}
+
+/* Views exposed filters styling */
+.views-exposed-form {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1em;
+  border-radius: 4px;
+  margin-bottom: 1.5em;
+}
+
+.views-exposed-form .form-item {
+  margin-bottom: 0.5em;
+}
+
+.views-exposed-form label {
+  font-weight: bold;
+  margin-bottom: 0.25em;
+  display: block;
+}
+
+.views-exposed-form select {
+  min-width: 200px;
+}
+
+/* Views pager styling */
+.pager {
+  margin-top: 2em;
+  text-align: center;
+}
+
+.pager__items {
+  display: flex;
+  justify-content: center;
+  gap: 0.5em;
+  flex-wrap: wrap;
+}
+
+.pager__item {
+  list-style: none;
+}
+
+.pager__link {
+  display: block;
+  padding: 0.5em 0.75em;
+  text-decoration: none;
+  border: 1px solid;
+  border-color: inherit;
+  border-radius: 4px;
+}
+
+.pager__link:hover,
+.pager__item--current .pager__link {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+/* Views header and empty content */
+.view-header {
+  margin-bottom: 1.5em;
+}
+
+.view-empty {
+  text-align: center;
+  padding: 2em 1em;
+  font-style: italic;
+  opacity: 0.7;
+}
+
+/* Block view styling (for sidebar blocks, etc.) */
+.block-views-blockhot-links-by-category-block-1 {
+  margin-bottom: 1.5em;
+}
+
+.block-views-blockhot-links-by-category-block-1 .recent-hotlinks-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.block-views-blockhot-links-by-category-block-1 .recent-hotlinks-list li {
+  margin-bottom: 0.5em;
+  padding-bottom: 0.5em;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.block-views-blockhot-links-by-category-block-1 .recent-hotlinks-list li:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+/* More link styling */
+.more-link {
+  text-align: right;
+  margin-top: 1em;
+}
+
+.more-link a {
+  font-size: 0.9em;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.more-link a:hover {
+  text-decoration: underline;
+}
+
+/* Responsive adjustments for Views */
 @media (max-width: 768px) {
   .subcategory-nav-list {
     flex-direction: column;
+  }
+  
+  .hotlink-item,
+  .hotlink-display-wrapper {
+    flex-direction: column;
+    gap: 0.5em;
+  }
+  
+  .views-field-field-hotlink-thumbnail {
+    order: 0;
+    align-self: center;
+  }
+  
+  .views-exposed-form select {
+    min-width: auto;
+    width: 100%;
+  }
+  
+  .pager__items {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .hotlink-quick-rating {
+    text-align: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .views-exposed-form {
+    padding: 0.75em;
+  }
+  
+  .category-subcategories {
+    margin-bottom: 1em;
+    padding-bottom: 0.75em;
+  }
+  
+  .hotlink-item,
+  .hotlink-display-wrapper {
+    padding-bottom: 0.5em;
+    margin-bottom: 0.5em;
   }
 }
 
 /* Remove default list styling where needed */
 .hotlinks-index ul,
-.hotlinks-index li {
+.hotlinks-index li,
+.hotlinks-view-wrapper ul,
+.hotlinks-view-wrapper li {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* Ensure Views field groups work properly */
+.field-group-div {
+  /* Field group container */
+}
+
+/* Views AJAX loading states */
+.views-element-container.js-view-dom-id-loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.views-element-container.js-view-dom-id-loading::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border: 2px solid transparent;
+  border-top: 2px solid #333;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Accessibility improvements for Views */
+.visually-hidden {
+  position: absolute !important;
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  clip: rect(1px, 1px, 1px, 1px);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

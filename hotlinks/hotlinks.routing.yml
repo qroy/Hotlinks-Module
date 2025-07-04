@@ -14,11 +14,12 @@ hotlinks.index:
   requirements:
     _permission: 'access hotlinks'
 
+# Updated to use Views instead of custom controller
 hotlinks.category:
   path: '/hotlinks/category/{category}'
   defaults:
-    _controller: '\Drupal\hotlinks\Controller\HotlinksController::category'
-    _title_callback: '\Drupal\hotlinks\Controller\HotlinksController::categoryTitle'
+    _controller: '\Drupal\hotlinks\Controller\HotlinksViewController::categoryPage'
+    _title_callback: '\Drupal\hotlinks\Controller\HotlinksViewController::categoryTitle'
   requirements:
     _permission: 'access hotlinks'
   options:
@@ -33,3 +34,12 @@ hotlinks.test_data:
     _title: 'Test Data Management'
   requirements:
     _permission: 'administer hotlinks'
+
+# New route for all hotlinks listing
+hotlinks.all:
+  path: '/hotlinks/all'
+  defaults:
+    _controller: '\Drupal\hotlinks\Controller\HotlinksViewController::allHotlinks'
+    _title: 'All Hotlinks'
+  requirements:
+    _permission: 'access hotlinks'

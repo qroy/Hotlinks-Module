@@ -1,0 +1,74 @@
+{#
+/**
+ * @file
+ * Theme override for a view template to display a list of rows for hotlinks.
+ *
+ * Available variables:
+ * - attributes: HTML attributes for the container element.
+ * - rows: A list of rows. Each row contains:
+ *   - attributes: HTML attributes for the row.
+ *   - content: The row's content.
+ * - title: The title of this group of rows.
+ * - list: @todo.
+ * - options: Style options. Includes:
+ *   - type: The HTML list element to use, either ul or ol.
+ *   - class: A string or array of strings to use as wrapper class attribute(s).
+ * - wrapper_attributes: HTML attributes for the list's wrapper element.
+ * - view: The view object.
+ *
+ * @see template_preprocess_views_view_list()
+ */
+#}
+{% if attributes -%}
+<div{{ attributes.addClass('hotlinks-view-wrapper') }}>
+{%- endif %}
+  {% if title %}
+    <h3{{ title_attributes }}>{{ title }}</h3>
+  {% endif %}
+
+  {% if options.type == 'ul' %}
+    <ul{{ list.attributes.addClass('hotlinks-list') }}>
+  {% else %}
+    <ol{{ list.attributes.addClass('hotlinks-list') }}>
+  {% endif %}
+      {% for row in rows %}
+        <li{{ row.attributes.addClass('hotlink-item') }}>
+          <div class="hotlink-display-wrapper">
+            {{ row.content }}
+            
+            {# Add interactive elements if this is a category view #}
+            {% if view.storage.id == 'hotlinks_by_category' and view.current_display == 'page_1' %}
+              {# Extract node ID from the row content for rating widgets #}
+              {% set node_field = row.content['title'] %}
+              {% if node_field['#object'] %}
+                {% set node_id = node_field['#object'].id %}
+                
+                {# Add quick rating widget for authenticated users with permission #}
+                {% if user.isAuthenticated and user.hasPermission('rate hotlinks') %}
+                  <div class="hotlink-quick-rating">
+                    <div class="hotlinks-rating-widget" 
+                         data-node-id="{{ node_id }}" 
+                         data-max-rating="5">
+                      {# This will be enhanced by JavaScript #}
+                      <span class="rating-label">{{ 'Quick rate:'|t }}</span>
+                      {% for i in 1..5 %}
+                        <span class="rating-star empty" data-rating="{{ i }}">★</span>
+                      {% endfor %}
+                    </div>
+                  </div>
+                {% endif %}
+              {% endif %}
+            {% endif %}
+          </div>
+        </li>
+      {% endfor %}
+
+  {% if options.type == 'ul' %}
+    </ul>
+  {% else %}
+    </ol>
+  {% endif %}
+
+{% if attributes -%}
+</div>
+{%- endif %}

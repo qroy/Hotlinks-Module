@@ -1,0 +1,48 @@
+{#
+/**
+ * @file
+ * Theme override to display a view of unformatted rows for hotlinks.
+ *
+ * Available variables:
+ * - title: The title of this group of rows. May be empty.
+ * - rows: A list of the view's row items.
+ *   - attributes: The row's HTML attributes.
+ *   - content: The row's rendered content.
+ * - view: The view object.
+ * - default_row_class: A flag indicating whether default classes should be
+ *   used on rows.
+ *
+ * @see template_preprocess_views_view_unformatted()
+ */
+#}
+{% if title %}
+  <h3>{{ title }}</h3>
+{% endif %}
+
+<div class="hotlinks-list-container">
+  {% if rows %}
+    <ul class="hotlinks-list">
+      {% for row in rows %}
+        <li{{ row.attributes.addClass('hotlink-item') }}>
+          <div class="hotlink-content-wrapper">
+            {{ row.content }}
+            
+            {# Add AJAX rating widget if user can rate and reviews module is enabled #}
+            {% if view.storage.id == 'hotlinks_by_category' %}
+              {% set node_id = row.content['#node'].nid.value %}
+              {% if node_id and user_can_rate %}
+                <div class="hotlink-rating-widget-wrapper">
+                  {{ drupal_view('hotlinks_rating_widget', 'default', node_id) }}
+                </div>
+              {% endif %}
+            {% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="no-hotlinks">
+      <p>{{ 'No hotlinks found in this category.'|t }}</p>
+    </div>
+  {% endif %}
+</div>
