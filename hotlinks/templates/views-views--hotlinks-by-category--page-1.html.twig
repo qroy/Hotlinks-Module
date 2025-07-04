@@ -1,0 +1,126 @@
+{#
+/**
+ * @file
+ * Theme override to display a view for hotlinks category page.
+ *
+ * Available variables:
+ * - attributes: Remaining HTML attributes for the containing element.
+ * - css_name: A CSS-safe version of the view name.
+ * - css_class: The user-defined CSS class names.
+ * - header: The optional header.
+ * - footer: The optional footer.
+ * - rows: The results of the view query, if any.
+ * - empty: The content to display if there are no rows.
+ * - pager: The optional pager next/prev links to display.
+ * - exposed: Exposed widget form/info to display.
+ * - feed_icons: Available feed icons.
+ * - more: A link to view more, if any.
+ * - view: The view object.
+ * - subcategories: Array of subcategory data.
+ * - has_subcategories: Boolean if subcategories exist.
+ * - category_name: The current category name.
+ * - category_description: The current category description.
+ *
+ * @see template_preprocess_views_view()
+ */
+#}
+{%
+  set classes = [
+    'view',
+    'view-' ~ id|clean_class,
+    'view-id-' ~ id,
+    'view-display-id-' ~ display_id,
+    dom_id ? 'js-view-dom-id-' ~ dom_id,
+  ]
+%}
+
+<div{{ attributes.addClass(classes) }}>
+  
+  {# Category header with description #}
+  {% if category_name %}
+    <div class="category-header">
+      <h1>{{ category_name }}</h1>
+      {% if category_description %}
+        <div class="category-description">{{ category_description }}</div>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {# Subcategories navigation #}
+  {% if has_subcategories and subcategories %}
+    <div class="category-subcategories">
+      <h3>{{ 'Subcategories'|t }}</h3>
+      <ul class="subcategory-nav-list">
+        {% for subcategory in subcategories %}
+          <li>
+            <a href="{{ subcategory.url }}" class="subcategory-nav-link">
+              {{ subcategory.name }} ({{ subcategory.count }})
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {# Regular view content #}
+  {{ title_prefix }}
+  {% if title %}
+    {{ title }}
+  {% endif %}
+  {{ title_suffix }}
+  
+  {% if header %}
+    <div class="view-header">
+      {{ header }}
+    </div>
+  {% endif %}
+
+  {% if exposed %}
+    <div class="view-filters">
+      {{ exposed }}
+    </div>
+  {% endif %}
+
+  {% if attachment_before %}
+    <div class="attachment attachment-before">
+      {{ attachment_before }}
+    </div>
+  {% endif %}
+
+  {% if rows %}
+    <div class="view-content">
+      {{ rows }}
+    </div>
+  {% elseif empty %}
+    <div class="view-empty">
+      {{ empty }}
+    </div>
+  {% endif %}
+
+  {% if pager %}
+    {{ pager }}
+  {% endif %}
+
+  {% if attachment_after %}
+    <div class="attachment attachment-after">
+      {{ attachment_after }}
+    </div>
+  {% endif %}
+
+  {% if more %}
+    {{ more }}
+  {% endif %}
+
+  {% if footer %}
+    <div class="view-footer">
+      {{ footer }}
+    </div>
+  {% endif %}
+
+  {% if feed_icons %}
+    <div class="feed-icons">
+      {{ feed_icons }}
+    </div>
+  {% endif %}
+
+</div>

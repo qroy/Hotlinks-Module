@@ -58,13 +58,14 @@ class HotlinksViewController extends ControllerBase {
         throw new \InvalidArgumentException('Invalid category vocabulary');
       }
 
-      // Build subcategories navigation
+      // Build subcategories navigation - place at top with higher weight
       $children = $this->entityTypeManager
         ->getStorage('taxonomy_term')
         ->loadChildren($category->id());
 
       if (!empty($children)) {
         $build['subcategories'] = $this->buildSubcategoryNavigation($children);
+        $build['subcategories']['#weight'] = -50; // Make sure it appears before the view
       }
 
       // Load the Views display
@@ -75,14 +76,30 @@ class HotlinksViewController extends ControllerBase {
         $view->preExecute();
         $view->execute();
 
-        // Add the view output
+        // Add the view output with proper weight
         $build['hotlinks_view'] = [
           '#type' => 'view',
           '#name' => 'hotlinks_by_category',
           '#display_id' => 'page_1',
           '#arguments' => [$category->id()],
           '#embed' => TRUE,
+          '#weight' => 0,
         ];
+
+        // Add category header information
+        $build['category_header'] = [
+          '#markup' => '<div class="category-header"><h1>' . $this->escapeOutput($category->getName()) . '</h1></div>',
+          '#weight' => -60,
+        ];
+        
+        // Add category description if it exists
+        $description = $category->getDescription();
+        if (!empty($description)) {
+          $build['category_description'] = [
+            '#markup' => '<div class="category-description">' . $description . '</div>',
+            '#weight' => -55,
+          ];
+        }
 
         // Add additional category information
         $build['category_info'] = $this->buildCategoryInfo($category, $view);
@@ -207,6 +224,7 @@ class HotlinksViewController extends ControllerBase {
           '#attributes' => ['class' => ['subcategory-nav-list']],
           '#list_type' => 'ul',
         ],
+        '#weight' => -20,
       ];
     }
 

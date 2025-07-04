@@ -12,14 +12,13 @@ dependencies:
     - taxonomy.vocabulary.hotlink_categories
   module:
     - hotlinks
-    - hotlinks_reviews
     - node
     - taxonomy
     - user
 id: hotlinks_by_category
 label: 'Hotlinks by Category'
 module: hotlinks
-description: 'Display hotlinks organized by category with Star Trek styling'
+description: 'Display hotlinks organized by category'
 tag: hotlinks
 base_table: node_field_data
 base_field: nid
@@ -44,31 +43,7 @@ display:
           exclude: false
           alter:
             alter_text: false
-            text: ''
             make_link: false
-            path: ''
-            absolute: false
-            external: false
-            replace_spaces: false
-            path_case: none
-            trim_whitespace: false
-            alt: ''
-            rel: ''
-            link_class: ''
-            prefix: ''
-            suffix: ''
-            target: ''
-            nl2br: false
-            max_length: 0
-            word_boundary: true
-            ellipsis: true
-            more_link: false
-            more_link_text: ''
-            more_link_path: ''
-            strip_tags: false
-            trim: false
-            preserve_tags: ''
-            html: false
           element_type: ''
           element_class: ''
           element_label_type: ''
@@ -107,31 +82,7 @@ display:
           exclude: false
           alter:
             alter_text: false
-            text: ''
             make_link: false
-            path: ''
-            absolute: false
-            external: false
-            replace_spaces: false
-            path_case: none
-            trim_whitespace: false
-            alt: ''
-            rel: ''
-            link_class: ''
-            prefix: ''
-            suffix: ''
-            target: ''
-            nl2br: false
-            max_length: 0
-            word_boundary: true
-            ellipsis: true
-            more_link: false
-            more_link_text: ''
-            more_link_path: ''
-            strip_tags: false
-            trim: false
-            preserve_tags: ''
-            html: false
           element_type: ''
           element_class: ''
           element_label_type: ''
@@ -173,31 +124,7 @@ display:
           exclude: false
           alter:
             alter_text: false
-            text: ''
             make_link: false
-            path: ''
-            absolute: false
-            external: false
-            replace_spaces: false
-            path_case: none
-            trim_whitespace: false
-            alt: ''
-            rel: ''
-            link_class: ''
-            prefix: ''
-            suffix: ''
-            target: ''
-            nl2br: false
-            max_length: 0
-            word_boundary: true
-            ellipsis: true
-            more_link: false
-            more_link_text: ''
-            more_link_path: ''
-            strip_tags: false
-            trim: false
-            preserve_tags: ''
-            html: false
           element_type: ''
           element_class: ''
           element_label_type: ''
@@ -240,31 +167,7 @@ display:
           exclude: false
           alter:
             alter_text: false
-            text: ''
             make_link: false
-            path: ''
-            absolute: false
-            external: false
-            replace_spaces: false
-            path_case: none
-            trim_whitespace: false
-            alt: ''
-            rel: ''
-            link_class: ''
-            prefix: ''
-            suffix: ''
-            target: ''
-            nl2br: false
-            max_length: 0
-            word_boundary: true
-            ellipsis: true
-            more_link: false
-            more_link_text: ''
-            more_link_path: ''
-            strip_tags: false
-            trim: false
-            preserve_tags: ''
-            html: false
           element_type: ''
           element_class: ''
           element_label_type: ''
@@ -303,31 +206,7 @@ display:
           exclude: false
           alter:
             alter_text: false
-            text: ''
             make_link: false
-            path: ''
-            absolute: false
-            external: false
-            replace_spaces: false
-            path_case: none
-            trim_whitespace: false
-            alt: ''
-            rel: ''
-            link_class: ''
-            prefix: ''
-            suffix: ''
-            target: ''
-            nl2br: false
-            max_length: 0
-            word_boundary: true
-            ellipsis: true
-            more_link: false
-            more_link_text: ''
-            more_link_path: ''
-            strip_tags: false
-            trim: false
-            preserve_tags: ''
-            html: false
           element_type: ''
           element_class: ''
           element_label_type: ''
@@ -343,71 +222,6 @@ display:
           click_sort_column: value
           type: text_default
           settings: {  }
-          group_column: value
-          group_columns: {  }
-          group_rows: true
-          delta_limit: 0
-          delta_offset: 0
-          delta_reversed: false
-          delta_first_last: false
-          multi_type: separator
-          separator: ', '
-          field_api_classes: false
-        field_hotlink_avg_rating:
-          id: field_hotlink_avg_rating
-          table: node__field_hotlink_avg_rating
-          field: field_hotlink_avg_rating
-          relationship: none
-          group_type: group
-          admin_label: ''
-          plugin_id: field
-          label: ''
-          exclude: false
-          alter:
-            alter_text: false
-            text: ''
-            make_link: false
-            path: ''
-            absolute: false
-            external: false
-            replace_spaces: false
-            path_case: none
-            trim_whitespace: false
-            alt: ''
-            rel: ''
-            link_class: ''
-            prefix: ''
-            suffix: ''
-            target: ''
-            nl2br: false
-            max_length: 0
-            word_boundary: true
-            ellipsis: true
-            more_link: false
-            more_link_text: ''
-            more_link_path: ''
-            strip_tags: false
-            trim: false
-            preserve_tags: ''
-            html: false
-          element_type: ''
-          element_class: ''
-          element_label_type: ''
-          element_label_class: ''
-          element_label_colon: false
-          element_wrapper_type: ''
-          element_wrapper_class: ''
-          element_default_classes: true
-          empty: ''
-          hide_empty: true
-          empty_zero: true
-          hide_alter_empty: true
-          click_sort_column: value
-          type: hotlinks_rating_stars
-          settings:
-            max_rating: 5
-            show_count: true
-            compact: true
           group_column: value
           group_columns: {  }
           group_rows: true
@@ -541,15 +355,10 @@ display:
             description: ''
             use_operator: false
             operator: ''
-            operator_limit_selection: false
-            operator_list: {  }
             identifier: ''
             required: false
             remember: false
             multiple: false
-            remember_roles:
-              authenticated: authenticated
-            placeholder: ''
           is_grouped: false
           group_info:
             label: ''
@@ -581,15 +390,10 @@ display:
             description: ''
             use_operator: false
             operator: ''
-            operator_limit_selection: false
-            operator_list: {  }
             identifier: ''
             required: false
             remember: false
             multiple: false
-            remember_roles:
-              authenticated: authenticated
-            placeholder: ''
           is_grouped: false
           group_info:
             label: ''
@@ -728,8 +532,6 @@ display:
           wrapper_class: hotlinks-list
           class: ''
       arguments: {  }
-      defaults:
-        arguments: false
       filters:
         status:
           id: status
@@ -749,15 +551,10 @@ display:
             description: ''
             use_operator: false
             operator: ''
-            operator_limit_selection: false
-            operator_list: {  }
             identifier: ''
             required: false
             remember: false
             multiple: false
-            remember_roles:
-              authenticated: authenticated
-            placeholder: ''
           is_grouped: false
           group_info:
             label: ''
@@ -789,15 +586,10 @@ display:
             description: ''
             use_operator: false
             operator: ''
-            operator_limit_selection: false
-            operator_list: {  }
             identifier: ''
             required: false
             remember: false
             multiple: false
-            remember_roles:
-              authenticated: authenticated
-            placeholder: ''
           is_grouped: false
           group_info:
             label: ''
@@ -828,16 +620,10 @@ display:
             description: 'Filter by category'
             use_operator: false
             operator: field_hotlink_category_target_id_op
-            operator_limit_selection: false
-            operator_list: {  }
             identifier: category
             required: false
             remember: false
             multiple: true
-            remember_roles:
-              authenticated: authenticated
-              anonymous: '0'
-              administrator: '0'
             reduce: false
             placeholder: 'Select categories...'
           is_grouped: false
@@ -858,9 +644,6 @@ display:
           hierarchy: true
           limit: true
           error_message: true
-      defaults:
-        filters: false
-        filter_groups: false
       filter_groups:
         operator: AND
         groups:
@@ -872,211 +655,6 @@ display:
         - 'languages:language_interface'
         - url
         - url.query_args
-        - 'user.node_grants:view'
-        - user.permissions
-      tags:
-        - 'config:field.storage.node.field_hotlink_category'
-        - 'config:field.storage.node.field_hotlink_description'
-        - 'config:field.storage.node.field_hotlink_thumbnail'
-        - 'config:field.storage.node.field_hotlink_url'
-  block_1:
-    id: block_1
-    display_title: 'Recent Hotlinks Block'
-    display_plugin: block
-    position: 3
-    display_options:
-      display_extenders: {  }
-      block_description: 'Recent Hotlinks'
-      block_category: 'Hotlinks'
-      allow:
-        items_per_page: '0'
-      style:
-        type: html_list
-        options:
-          grouping: {  }
-          row_class: ''
-          default_row_class: true
-          type: ul
-          wrapper_class: recent-hotlinks-list
-          class: ''
-      defaults:
-        style: false
-        row: false
-        sorts: false
-        pager: false
-        use_more: false
-        use_more_always: false
-        use_more_text: false
-      row:
-        type: fields
-        options:
-          default_field_elements: false
-          inline:
-            title: title
-            field_hotlink_avg_rating: field_hotlink_avg_rating
-          separator: ' '
-          hide_empty: false
-      sorts:
-        created:
-          id: created
-          table: node_field_data
-          field: created
-          relationship: none
-          group_type: group
-          admin_label: ''
-          plugin_id: date
-          order: DESC
-          expose:
-            label: ''
-            field_identifier: ''
-          exposed: false
-          granularity: second
-      pager:
-        type: some
-        options:
-          offset: 0
-          items_per_page: 5
-      use_more: true
-      use_more_always: false
-      use_more_text: 'View all hotlinks'
-      link_display: page_2
-      link_url: ''
-      fields:
-        title:
-          id: title
-          table: node_field_data
-          field: title
-          relationship: none
-          group_type: group
-          admin_label: ''
-          plugin_id: field
-          label: ''
-          exclude: false
-          alter:
-            alter_text: false
-            text: ''
-            make_link: false
-            path: ''
-            absolute: false
-            external: false
-            replace_spaces: false
-            path_case: none
-            trim_whitespace: false
-            alt: ''
-            rel: ''
-            link_class: ''
-            prefix: ''
-            suffix: ''
-            target: ''
-            nl2br: false
-            max_length: 0
-            word_boundary: true
-            ellipsis: true
-            more_link: false
-            more_link_text: ''
-            more_link_path: ''
-            strip_tags: false
-            trim: false
-            preserve_tags: ''
-            html: false
-          element_type: ''
-          element_class: ''
-          element_label_type: ''
-          element_label_class: ''
-          element_label_colon: false
-          element_wrapper_type: ''
-          element_wrapper_class: ''
-          element_default_classes: true
-          empty: ''
-          hide_empty: false
-          empty_zero: false
-          hide_alter_empty: true
-          click_sort_column: value
-          type: string
-          settings:
-            link_to_entity: true
-          group_column: value
-          group_columns: {  }
-          group_rows: true
-          delta_limit: 0
-          delta_offset: 0
-          delta_reversed: false
-          delta_first_last: false
-          multi_type: separator
-          separator: ', '
-          field_api_classes: false
-        field_hotlink_avg_rating:
-          id: field_hotlink_avg_rating
-          table: node__field_hotlink_avg_rating
-          field: field_hotlink_avg_rating
-          relationship: none
-          group_type: group
-          admin_label: ''
-          plugin_id: field
-          label: ''
-          exclude: false
-          alter:
-            alter_text: false
-            text: ''
-            make_link: false
-            path: ''
-            absolute: false
-            external: false
-            replace_spaces: false
-            path_case: none
-            trim_whitespace: false
-            alt: ''
-            rel: ''
-            link_class: ''
-            prefix: ''
-            suffix: ''
-            target: ''
-            nl2br: false
-            max_length: 0
-            word_boundary: true
-            ellipsis: true
-            more_link: false
-            more_link_text: ''
-            more_link_path: ''
-            strip_tags: false
-            trim: false
-            preserve_tags: ''
-            html: false
-          element_type: ''
-          element_class: ''
-          element_label_type: ''
-          element_label_class: ''
-          element_label_colon: false
-          element_wrapper_type: ''
-          element_wrapper_class: ''
-          element_default_classes: true
-          empty: ''
-          hide_empty: true
-          empty_zero: true
-          hide_alter_empty: true
-          click_sort_column: value
-          type: hotlinks_rating_stars
-          settings:
-            max_rating: 5
-            show_count: false
-            compact: true
-          group_column: value
-          group_columns: {  }
-          group_rows: true
-          delta_limit: 0
-          delta_offset: 0
-          delta_reversed: false
-          delta_first_last: false
-          multi_type: separator
-          separator: ', '
-          field_api_classes: false
-      defaults:
-        fields: false
-    cache_metadata:
-      max-age: -1
-      contexts:
-        - 'languages:language_content'
-        - 'languages:language_interface'
         - 'user.node_grants:view'
         - user.permissions
       tags:

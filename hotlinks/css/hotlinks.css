@@ -50,6 +50,16 @@
   border-color: inherit;
   margin-bottom: 1.5em;
   padding-bottom: 1em;
+  background: rgba(0, 0, 0, 0.02);
+  padding: 1em;
+  border-radius: 4px;
+}
+
+.category-subcategories h3 {
+  margin-top: 0;
+  margin-bottom: 0.75em;
+  font-weight: bold;
+  color: #0066CC; /* Star Trek blue for headers */
 }
 
 .subcategory-nav-list {
@@ -58,18 +68,36 @@
   margin: 0;
   display: flex;
   flex-wrap: wrap;
+  gap: 0.5em;
 }
 
 .subcategory-nav-list li {
   margin: 0;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(0, 100, 200, 0.2);
+  border-radius: 4px;
+  padding: 0.25em 0.5em;
+  transition: all 0.2s ease;
+}
+
+.subcategory-nav-list li:hover {
+  background: rgba(0, 100, 200, 0.1);
+  border-color: #0066CC;
 }
 
 .subcategory-nav-list li:not(:last-child)::after {
-  content: " • ";
+  content: none; /* Remove the bullet separator since we're using flex with gap */
 }
 
 .subcategory-nav-link {
-  /* Inherit theme link styling */
+  text-decoration: none;
+  font-weight: 500;
+  color: #0066CC;
+}
+
+.subcategory-nav-link:hover {
+  text-decoration: underline;
+  color: #004499;
 }
 
 /* Category stats and info */
@@ -364,6 +392,16 @@
 @media (max-width: 768px) {
   .subcategory-nav-list {
     flex-direction: column;
+    gap: 0.25em;
+  }
+  
+  .subcategory-nav-list li {
+    text-align: center;
+  }
+  
+  .category-subcategories {
+    padding: 0.75em;
+    margin-bottom: 1em;
   }
   
   .hotlink-item,
@@ -389,6 +427,11 @@
   
   .hotlink-quick-rating {
     text-align: center;
+  }
+  
+  .category-header h1 {
+    font-size: 1.5em;
+    margin-bottom: 0.5em;
   }
 }
 

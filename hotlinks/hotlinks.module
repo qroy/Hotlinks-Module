@@ -35,6 +35,83 @@ function hotlinks_help($route_name, RouteMatchInterface $route_match) {
 }
 
 /**
+ * Implements hook_theme().
+ */
+function hotlinks_theme() {
+  return [
+    // Don't register a custom theme hook, just use preprocessing
+    // The template suggestions will be handled by Drupal automatically
+  ];
+}
+
+/**
+ * Implements hook_preprocess_views_view().
+ */
+function hotlinks_preprocess_views_view(&$variables) {
+  $view = $variables['view'];
+  
+  // Only process our hotlinks view on the category page display
+  if ($view->storage->id() == 'hotlinks_by_category' && $view->current_display == 'page_1') {
+    // Get the category argument
+    $category_id = $view->args[0] ?? NULL;
+    
+    if ($category_id && is_numeric($category_id)) {
+      try {
+        $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
+        $category = $term_storage->load($category_id);
+        
+        if ($category && $category->bundle() === 'hotlink_categories') {
+          // Set category information
+          $variables['category_name'] = $category->getName();
+          $variables['category_description'] = $category->getDescription();
+          
+          // Get subcategories
+          $children = $term_storage->loadChildren($category_id);
+          
+          if (!empty($children)) {
+            // Build subcategory navigation data
+            $subcategory_data = [];
+            
+            // Sort children alphabetically
+            $children_array = array_values($children);
+            usort($children_array, function($a, $b) {
+              return strcmp($a->getName(), $b->getName());
+            });
+            
+            foreach ($children_array as $child) {
+              // Get count for this subcategory
+              $child_count = hotlinks_get_category_total_count($child->id());
+              
+              $subcategory_data[] = [
+                'name' => $child->getName(),
+                'id' => $child->id(),
+                'count' => $child_count,
+                'url' => \Drupal\Core\Url::fromRoute('hotlinks.category', ['category' => $child->id()])->toString(),
+              ];
+            }
+            
+            // Add subcategories to the view variables
+            $variables['subcategories'] = $subcategory_data;
+            $variables['has_subcategories'] = TRUE;
+          } else {
+            // No subcategories
+            $variables['has_subcategories'] = FALSE;
+            $variables['subcategories'] = [];
+          }
+          
+          // Only add template suggestions if the templates actually exist
+          // Remove this section to avoid the template loading error
+        }
+      } catch (\Exception $e) {
+        \Drupal::logger('hotlinks')->error('Error preprocessing views for subcategories: @error', [
+          '@error' => $e->getMessage(),
+        ]);
+      }
+    }
+  }
+}
+
+/**
  * Implements hook_form_FORM_ID_alter() for node_hotlink_form.
  */
 function hotlinks_form_node_hotlink_form_alter(&$form, FormStateInterface $form_state, $form_id) {
